@@ -84,20 +84,43 @@ def test_check_paragraph_catches_problems():
     assert "⟦1⟧" in joined and "20%" in joined
 
 
-def test_rewrite_chunk_retry_then_keep():
+def test_rewrite_chunk_draft_retry_then_final():
     paras = ["A ⟦1⟧ costs 20% less for every new investor who opens one through a broker in India today."]
     toks = [{"1": "demat account"}]
+    good = "A ⟦1⟧ now costs 20% less for each new investor opening one via an Indian broker."
     answers = iter([
-        json.dumps({"paragraphs": ["It costs less for new investors."]}),             # breaks rules
-        json.dumps({"paragraphs": ["A ⟦1⟧ now costs 20% less for each new investor opening one via an Indian broker."]}),
+        json.dumps({"tells": [], "paragraphs": ["It costs less for new investors."]}),   # draft breaks rules
+        json.dumps({"tells": [], "paragraphs": [good]}),                                   # draft retry OK
+        json.dumps({"remaining": [], "paragraphs": [good.replace("now ", "")]}),          # final OK
     ])
-    fake = lambda prompt, key, model: (next(answers), {"input_tokens": 100, "output_tokens": 50})  # noqa: E731
-    res = h.rewrite_chunk(paras, toks, h.Settings(), "Costs", "k", "m", caller=fake)
-    assert res["status"] == ["rewritten"] and res["usage"]["ai_calls"] == 2
+    systems = []
 
-    bad = lambda prompt, key, model: (json.dumps({"paragraphs": ["Totally different."]}), {"input_tokens": 1, "output_tokens": 1})  # noqa: E731
+    def fake(prompt, key, model, **kw):
+        systems.append("step 1" if "step 1 of 2" in kw.get("system", "") else "step 2")
+        return next(answers), {"input_tokens": 100, "output_tokens": 50}
+
+    res = h.rewrite_chunk(paras, toks, h.Settings(), "Costs", "k", "m", caller=fake)
+    assert res["status"] == ["rewritten"] and res["usage"]["ai_calls"] == 3
+    assert res["paragraphs"] == [good.replace("now ", "")]
+    assert systems == ["step 1", "step 1", "step 2"]
+
+
+def test_final_falls_back_to_draft_then_original():
+    paras = ["A ⟦1⟧ costs 20% less for every new investor who opens one through a broker in India today."]
+    toks = [{"1": "demat account"}]
+    draft = ["A ⟦1⟧ costs 20% less for each new investor who opens one with an Indian broker."]
+    bad = lambda prompt, key, model, **kw: (json.dumps({"paragraphs": ["Totally different."]}), {"input_tokens": 1, "output_tokens": 1})  # noqa: E731
+    res = h.finalize_chunk(paras, draft, toks, h.Settings(), "", "k", "m", caller=bad)
+    assert res["paragraphs"] == draft and res["status"] == ["rewritten"]
     res = h.rewrite_chunk(paras, toks, h.Settings(), "", "k", "m", caller=bad)
     assert res["status"] == ["kept"] and res["paragraphs"] == paras
+
+
+def test_checks_dashes_and_invented_numbers():
+    o = "Most brokers let you open an account online and the charges stay low for every new investor today."
+    assert h.check_paragraph(o, "Most brokers let you open one online — and charges stay low for new investors.", {}, [])
+    assert any("new numbers" in p for p in h.check_paragraph(o, "Most brokers let you open one online in 5 minutes, and charges stay low.", {}, []))
+    assert h.check_paragraph(o, "Most brokers let you open an account online, and charges stay low for new investors.", {}, []) == []
 
 
 def test_scores_improve_on_plainer_text():

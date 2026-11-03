@@ -319,11 +319,17 @@ async function run() {
 
 async function rewriteAll(st) {
   const byId = Object.fromEntries(S.prep.blocks.map(b => [b.id, b]));
-  const chunks = S.prep.chunks; let done = 0;
-  const total = chunks.length;
-  const update = () => { $("#busyTitle").textContent = `Rewriting section ${Math.min(done + 1, total)} of ${total}…`;
-    $("#busyText").textContent = `${S.prep.words.toLocaleString()} words · about ${Math.max(10, Math.round(total * 12 / PARALLEL))} seconds`;
-    $("#barFill").style.width = Math.max(6, Math.round(100 * done / total)) + "%"; };
+  const chunks = S.prep.chunks;
+  const total = chunks.length * 2;   // two steps per section: draft, then self-check + final
+  let done = 0;
+  const update = () => {
+    const sec = Math.min(Math.floor(done / 2) + 1, chunks.length);
+    $("#busyTitle").textContent = `Humanizing section ${sec} of ${chunks.length}…`;
+    $("#busyText").textContent = `${S.prep.words.toLocaleString()} words · finding AI patterns, drafting, then checking the draft · about ${Math.max(15, Math.round(chunks.length * 25 / PARALLEL))} seconds`;
+    $("#barFill").style.width = Math.max(5, Math.round(100 * done / total)) + "%";
+  };
+  const post = (body) => api("/api/rewrite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const addUsage = (r) => { ["ai_calls","input_tokens","output_tokens"].forEach(k => S.usage[k] += r.usage[k] || 0); S.usage.cost_usd += r.cost_usd || 0; };
   update();
   let next = 0;
   async function worker() {
@@ -331,15 +337,16 @@ async function rewriteAll(st) {
       const c = chunks[next++];
       const paras = c.ids.map(id => ({ id, text: byId[id].text, tokens: byId[id].tokens }));
       try {
-        const r = await api("/api/rewrite", { method: "POST", headers: { "Content-Type": "application/json" },
-                                              body: JSON.stringify({ heading: c.heading, paras, settings: st }) });
+        const d = await post({ stage: "draft", heading: c.heading, paras, settings: st });
+        addUsage(d); done++; update();
+        const r = await post({ stage: "final", heading: c.heading, paras, settings: st, draft: d.draft, draft_ok: d.ok });
+        addUsage(r);
         r.ids.forEach((id, i) => { S.res[id] = { text: r.paragraphs[i], status: r.status[i], note: r.status[i] === "kept" ? (r.notes.find(Boolean) || "") : "" };
                                     S.choice[id] = r.status[i] === "rewritten" ? "new" : "orig"; });
-        ["ai_calls","input_tokens","output_tokens"].forEach(k => S.usage[k] += r.usage[k] || 0);
-        S.usage.cost_usd += r.cost_usd || 0;
       } catch (e) {
         if (/API key|GEMINI_API_KEY|session expired/.test(e.message)) throw e;
         c.ids.forEach(id => { S.res[id] = { text: byId[id].text, status: "kept", note: "This section couldn't be rewritten (" + e.message + ")" }; S.choice[id] = "orig"; });
+        if (done % 2 === 0) done++;
       }
       done++; update();
     }

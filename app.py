@@ -5,7 +5,9 @@ GET  /               the tool page
 GET  /api/health     is Gemini configured
 POST /api/prepare    multipart: source=paste|docx|gdoc, text | file | gdoc_url
                      -> blocks, chunks, "before" scores
-POST /api/rewrite    JSON: {heading, paras:[{id,text,tokens}], settings} -> rewritten paragraphs (one chunk)
+POST /api/rewrite    JSON: {heading, paras:[{id,text,tokens}], settings, stage}
+                     stage "draft": mark AI patterns + draft; stage "final": self-check + final (needs "draft");
+                     no stage: both steps in one request
 POST /api/score      JSON: {text} -> scores
 POST /api/download   multipart: source, file | gdoc_url | blocks, final (JSON {id: text}) -> .docx
 
@@ -117,8 +119,19 @@ async def rewrite(request: Request):
         if sum(hz.count_words(hz.expand_tokens(t, k)) for t, k in zip(texts, tokens)) > 900:
             return err(400, "This section is too long for one request.")
         settings = hz.Settings.from_dict(data.get("settings") or {})
-        res = hz.rewrite_chunk(texts, tokens, settings, str(data.get("heading") or "")[:200],
-                               gemini_key(), gemini_model())
+        heading = str(data.get("heading") or "")[:200]
+        stage = data.get("stage") or "both"
+        if stage == "draft":
+            res = hz.draft_chunk(texts, tokens, settings, heading, gemini_key(), gemini_model())
+        elif stage == "final":
+            draft = data.get("draft") or []
+            if not isinstance(draft, list) or len(draft) != len(texts) or not all(isinstance(d, str) for d in draft):
+                return err(400, "The draft doesn't match the paragraphs.")
+            ok = data.get("draft_ok")
+            ok = [bool(x) for x in ok] if isinstance(ok, list) and len(ok) == len(texts) else None
+            res = hz.finalize_chunk(texts, draft, tokens, settings, heading, gemini_key(), gemini_model(), draft_ok=ok)
+        else:
+            res = hz.rewrite_chunk(texts, tokens, settings, heading, gemini_key(), gemini_model())
     except hz.HumanizerError as exc:
         return err(502, str(exc))
     except (ValueError, TypeError, AttributeError):
