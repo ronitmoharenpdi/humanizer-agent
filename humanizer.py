@@ -429,6 +429,21 @@ FINAL_SYSTEM = ("You are a senior editor at a content agency doing the final pas
                 'Output only JSON: {"remaining": ["what you fixed in this pass"], "paragraphs": ["final 1", "final 2", ...]}')
 
 
+ONE_CALL_SYSTEM = ("You are a senior editor at a content agency. You remove AI writing patterns from draft text so it "
+                   "reads like a skilled human wrote it for a real reader, without changing what it says.\n\n"
+                   + PATTERN_GUIDE + "\n\n" + HARD_RULES + "\n\n"
+                   "HOW TO WORK (do all four steps yourself before you answer; show only the final result):\n"
+                   "1. Mark the tells: read all the paragraphs once and note every pattern above, strongest first, "
+                   "looking at paragraph shape as well as sentences.\n"
+                   "2. Draft the rewrite: state each point naturally instead of patching phrases one at a time; rebuild "
+                   "a sentence or the whole paragraph around its main point when needed.\n"
+                   "3. Check the draft as a reader would: what still sounds AI-generated? Did you add or drop any fact, "
+                   "name, number, date, quote or claim? Search again for the tells that most often survive a rewrite: "
+                   "#1 contrasts, #2 closers, #6 triads, #8 dashes, #12-13 inflated words.\n"
+                   "4. Write the final version with natural, varied sentence length.\n"
+                   'Output only JSON: {"paragraphs": ["final 1", "final 2", ...]}')
+
+
 def _context(paras: list, tokens_by_para: list, settings: Settings, heading: str) -> list:
     lines = [
         f"Tone: {TONES[settings.tone]}.",
@@ -456,7 +471,7 @@ def build_draft_prompt(paras, tokens_by_para, settings, heading, problems: str =
     lines = _context(paras, tokens_by_para, settings, heading)
     if problems:
         lines.append("Your previous answer broke these rules. Fix them:\n" + problems)
-    lines.append(f"Paragraphs to edit ({len(paras)}). Return exactly {len(paras)} drafts:")
+    lines.append(f"Paragraphs to edit ({len(paras)}). Return exactly {len(paras)} paragraphs:")
     lines.append(json.dumps({"paragraphs": paras}, ensure_ascii=False, indent=1))
     return "\n\n".join(lines)
 
@@ -635,12 +650,23 @@ def finalize_chunk(paras, draft, tokens_by_para, settings: Settings, heading: st
 
 def rewrite_chunk(paras: list, tokens_by_para: list, settings: Settings, heading: str,
                   api_key: str, model: str, caller=call_gemini) -> dict:
-    """Both steps in one go (used by tests and local runs; the web page calls the steps separately)."""
-    d = draft_chunk(paras, tokens_by_para, settings, heading, api_key, model, caller)
-    f = finalize_chunk(paras, d["draft"], tokens_by_para, settings, heading, api_key, model, caller, d["ok"])
-    for k in ("input_tokens", "output_tokens", "ai_calls"):
-        f["usage"][k] += d["usage"][k]
-    return f
+    """One AI call per section: mark tells, draft, self-check and final in a single answer.
+    A second call happens only when a code check fails. Paragraphs that still fail keep the original."""
+    usage = {"input_tokens": 0, "output_tokens": 0, "ai_calls": 0}
+    best = _attempt(lambda pr: build_draft_prompt(paras, tokens_by_para, settings, heading, pr), ONE_CALL_SYSTEM,
+                    paras, tokens_by_para, settings, api_key, model, caller, usage)
+    final, status, notes = [], [], []
+    for i, orig in enumerate(paras):
+        new = best[0][i] if best else None
+        probs = best[1][i] if best else ["the AI answer couldn't be read"]
+        if new is not None and not probs:
+            final.append(new)
+            status.append("rewritten")
+        else:
+            final.append(orig)
+            status.append("kept")
+            notes.append(f"Kept the original of one paragraph: {probs[0]}.")
+    return {"paragraphs": final, "status": status, "notes": notes, "usage": usage}
 
 
 # --------------------------------------------------------------------------- #

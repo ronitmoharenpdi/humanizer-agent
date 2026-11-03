@@ -84,25 +84,18 @@ def test_check_paragraph_catches_problems():
     assert "⟦1⟧" in joined and "20%" in joined
 
 
-def test_rewrite_chunk_draft_retry_then_final():
+def test_rewrite_chunk_one_call_and_retry():
     paras = ["A ⟦1⟧ costs 20% less for every new investor who opens one through a broker in India today."]
     toks = [{"1": "demat account"}]
     good = "A ⟦1⟧ now costs 20% less for each new investor opening one via an Indian broker."
-    answers = iter([
-        json.dumps({"tells": [], "paragraphs": ["It costs less for new investors."]}),   # draft breaks rules
-        json.dumps({"tells": [], "paragraphs": [good]}),                                   # draft retry OK
-        json.dumps({"remaining": [], "paragraphs": [good.replace("now ", "")]}),          # final OK
-    ])
-    systems = []
+    ok = lambda prompt, key, model, **kw: (json.dumps({"paragraphs": [good]}), {"input_tokens": 100, "output_tokens": 50})  # noqa: E731
+    res = h.rewrite_chunk(paras, toks, h.Settings(), "Costs", "k", "m", caller=ok)
+    assert res["status"] == ["rewritten"] and res["usage"]["ai_calls"] == 1 and res["paragraphs"] == [good]
 
-    def fake(prompt, key, model, **kw):
-        systems.append("step 1" if "step 1 of 2" in kw.get("system", "") else "step 2")
-        return next(answers), {"input_tokens": 100, "output_tokens": 50}
-
-    res = h.rewrite_chunk(paras, toks, h.Settings(), "Costs", "k", "m", caller=fake)
-    assert res["status"] == ["rewritten"] and res["usage"]["ai_calls"] == 3
-    assert res["paragraphs"] == [good.replace("now ", "")]
-    assert systems == ["step 1", "step 1", "step 2"]
+    answers = iter([json.dumps({"paragraphs": ["It costs less for new investors."]}), json.dumps({"paragraphs": [good]})])
+    retry = lambda prompt, key, model, **kw: (next(answers), {"input_tokens": 100, "output_tokens": 50})  # noqa: E731
+    res = h.rewrite_chunk(paras, toks, h.Settings(), "Costs", "k", "m", caller=retry)
+    assert res["status"] == ["rewritten"] and res["usage"]["ai_calls"] == 2
 
 
 def test_final_falls_back_to_draft_then_original():
@@ -113,7 +106,7 @@ def test_final_falls_back_to_draft_then_original():
     res = h.finalize_chunk(paras, draft, toks, h.Settings(), "", "k", "m", caller=bad)
     assert res["paragraphs"] == draft and res["status"] == ["rewritten"]
     res = h.rewrite_chunk(paras, toks, h.Settings(), "", "k", "m", caller=bad)
-    assert res["status"] == ["kept"] and res["paragraphs"] == paras
+    assert res["status"] == ["kept"] and res["paragraphs"] == paras and res["usage"]["ai_calls"] == 2
 
 
 def test_checks_dashes_and_invented_numbers():
