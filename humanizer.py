@@ -375,8 +375,8 @@ Hard rules (breaking any of these makes the answer unusable):
 1. Return exactly the same number of paragraphs, in the same order. Paragraph N of the answer replaces paragraph N of the input. Never merge, split, drop or add paragraphs.
 2. Every placeholder like ⟦1⟧, ⟦2⟧ stands for a link or bold phrase. Keep each placeholder exactly once, unchanged, in the same paragraph. You may move it inside the sentence and change the words around it so the sentence still reads naturally with the placeholder's text in place.
 3. Keep every number, percentage, date, price, name, brand and product exactly as written.
-4. Keep every "must-keep phrase" exactly as written (same words, any letter case), at least as many times as it appears in the input paragraph.
-5. Keep each paragraph's meaning and every point it makes. Keep length within about 10% of the original.
+4. If a "must-keep phrase" appears in an input paragraph, it must appear in your version of that paragraph at least once, written exactly the same (any letter case). Repeating it less often is fine.
+5. Keep each paragraph's meaning and every point it makes. Cutting filler may make it shorter; never pad it to look longer.
 6. If a paragraph is a list item (starts with "-", "•" or "1."), keep that marker at the start.
 7. Output only JSON: {"paragraphs": ["...", "..."]}."""
 
@@ -486,11 +486,10 @@ def check_paragraph(original: str, rewritten: str, tokens: dict, keywords: list)
         problems.append("numbers changed or missing: " + ", ".join(missing_nums[:6]))
     for kw in keywords:
         pat = re.compile(r"(?<!\w)" + re.escape(kw) + r"(?!\w)", re.I)
-        need = len(pat.findall(o_plain))
-        if need and len(pat.findall(r_plain)) < need:
-            problems.append(f'must-keep phrase "{kw}" appears fewer times than in the original')
+        if pat.search(o_plain) and not pat.search(r_plain):
+            problems.append(f'must-keep phrase "{kw}" is missing')
     ow, rw = count_words(o_plain), count_words(r_plain)
-    if ow >= 25 and not (0.75 <= rw / max(ow, 1) <= 1.3):
+    if ow >= 25 and not (0.5 <= rw / max(ow, 1) <= 1.4):
         problems.append(f"length changed too much ({ow} → {rw} words)")
     return problems
 

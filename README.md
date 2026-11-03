@@ -10,13 +10,10 @@ It improves writing quality only: facts, numbers, names, SEO keywords, links and
    (Light / Balanced / Strong), English (Indian / US / UK), must-keep keywords, audience, optional brand-voice sample.
 3. **Rewrite** with Google Gemini, one section (~350 words) per request, three at a time.
 4. **Safety checks (code, not AI)** on every paragraph: links and bold phrases kept exactly once, every number kept,
-   must-keep keywords kept, length within range. If a check fails the AI gets one retry with the problems listed;
+   must-keep keywords still present (at least once), length not cut by more than half. If a check fails the AI gets one retry with the problems listed;
    if it still fails, **the original paragraph is kept** and marked "Original kept".
-5. **Review**: side-by-side Original vs Rewritten (AI-sounding phrases in red, changed wording in green,
-   links/bold in orange), per-paragraph **Use original / Use rewrite**, Final-text view.
-6. **Scores before → after** (plain code, explainable): readability (Flesch), AI-cliché phrases, sentence rhythm
-   (variety in sentence length), average sentence length, passive voice.
-7. **Output**: copy the text, or download **.docx**. For Word / Google Doc input the original file comes back with only the
+5. **Result**: only the humanized text (headings kept). A short note appears if any paragraph was left as written.
+6. **Output**: copy the text, or download **.docx**. For Word / Google Doc input the original file comes back with only the
    chosen paragraphs replaced: styles, headings, links, bold phrases, images and tables stay as they were.
 
 Not rewritten on purpose: headings, very short lines (< 8 words), paragraphs with images/fields, tables.
