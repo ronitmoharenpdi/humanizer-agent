@@ -554,6 +554,15 @@ def _numbers(text: str) -> list:
 DASH_RE = re.compile(r"—|\s–\s|\s--\s|–(?=\s)|(?<=\s)–")
 
 
+def fix_dashes(text: str) -> str:
+    """Replace leftover em/en dashes used as punctuation with commas (saves a retry). Ranges like 10–20 stay."""
+    text = re.sub(r"\s*(?:—|--)\s*", ", ", text)
+    text = re.sub(r"\s+–\s+", ", ", text)
+    text = re.sub(r",\s*,", ",", text)
+    text = re.sub(r",\s*([.!?;:])", r"\1", text)
+    return text.strip()
+
+
 def check_paragraph(original: str, rewritten: str, tokens: dict, keywords: list) -> list:
     """Problems with one rewritten paragraph (empty list = OK). Works on text with ⟦n⟧ tokens."""
     problems = []
@@ -601,6 +610,7 @@ def _attempt(build, system, paras, tokens_by_para, settings, api_key, model, cal
         if out is None:
             problems_text = f'- The answer must be JSON with "paragraphs": exactly {len(paras)} strings.'
             continue
+        out = [fix_dashes(x) for x in out]
         per = [check_paragraph(o, r, t, settings.keywords) for o, r, t in zip(paras, out, tokens_by_para)]
         if best is None or sum(map(len, per)) < sum(map(len, best[1])):
             best = (out, per)
