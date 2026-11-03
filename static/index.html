@@ -319,13 +319,11 @@ async function run() {
 
 async function rewriteAll(st) {
   const byId = Object.fromEntries(S.prep.blocks.map(b => [b.id, b]));
-  const chunks = S.prep.chunks;
-  let done = 0;
-  const update = () => {
-    $("#busyTitle").textContent = `Humanizing section ${Math.min(done + 1, chunks.length)} of ${chunks.length}…`;
-    $("#busyText").textContent = `${S.prep.words.toLocaleString()} words · finding AI patterns, rewriting and self-checking · about ${Math.max(15, Math.round(chunks.length * 20 / PARALLEL))} seconds`;
-    $("#barFill").style.width = Math.max(5, Math.round(100 * done / chunks.length)) + "%";
-  };
+  const chunks = S.prep.chunks; let done = 0;
+  const total = chunks.length;
+  const update = () => { $("#busyTitle").textContent = `Rewriting section ${Math.min(done + 1, total)} of ${total}…`;
+    $("#busyText").textContent = `${S.prep.words.toLocaleString()} words · about ${Math.max(10, Math.round(total * 12 / PARALLEL))} seconds`;
+    $("#barFill").style.width = Math.max(6, Math.round(100 * done / total)) + "%"; };
   update();
   let next = 0;
   async function worker() {

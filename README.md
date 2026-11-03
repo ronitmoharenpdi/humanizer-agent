@@ -8,13 +8,9 @@ It improves writing quality only: facts, numbers, names, SEO keywords, links and
    (shared as *Anyone with the link → Viewer*).
 2. **Must-keep keywords** (optional). Everything else uses fixed defaults: professional tone, balanced rewrite,
    Indian English (the engine still supports other tones / levels if they are needed again).
-3. **Rewrite** with Google Gemini, **one AI call per section** (~350 words), three sections at a time. In that one call
-   Gemini marks the AI patterns (26 patterns in 6 groups, adapted from [blader/humanizer](https://github.com/blader/humanizer):
-   staging like "not X but Y" and one-line closers, rhythm by rule like forced triads and dashes, inflation and AI
-   vocabulary, sales language, leftovers), drafts, self-checks the draft and returns only the final version.
-   A second call happens only when a code check fails. Default: strong rewrite, professional tone, Indian English.
+3. **Rewrite** with Google Gemini, one section (~350 words) per request, three at a time.
 4. **Safety checks (code, not AI)** on every paragraph: links and bold phrases kept exactly once, every number kept,
-   must-keep keywords still present (at least once), no new numbers, no dashes, length not cut below 30 %. If a check fails the AI gets one retry with the problems listed;
+   must-keep keywords still present (at least once), length not cut by more than half. If a check fails the AI gets one retry with the problems listed;
    if it still fails, **the original paragraph is kept** and marked "Original kept".
 5. **Result**: only the humanized text (headings kept). A short note appears if any paragraph was left as written.
 6. **Output**: copy the text, or download **.docx**. For Word / Google Doc input the original file comes back with only the
@@ -59,8 +55,3 @@ Then add the portal card (slug `humanizer`, `HUMANIZER_URL` in the portal projec
 ## Limits
 - Up to 6,000 words per run; Word files up to 4 MB (Vercel's upload limit; large images make files bigger).
 - English only. The tool doesn't claim to "beat AI detectors"; it improves readability and natural style.
-
-## Credits
-The AI-pattern guide in `humanizer.py` (PATTERN_GUIDE) is adapted from
-[blader/humanizer](https://github.com/blader/humanizer), MIT License, Copyright (c) 2025 Siqi Chen,
-which is based on Wikipedia's [Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing).

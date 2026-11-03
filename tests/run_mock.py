@@ -8,8 +8,8 @@ SWAPS = [("In today's fast-paced world, ", ""), ("leveraging", "using"), ("lever
          ("Furthermore, ", ""), ("seamlessly", "simply"), ("robust", "solid"), ("crucial", "important"),
          ("delve into", "get into"), ("it is important to note that ", ""), ("It is important to note that ", "")]
 
-def fake(prompt, key, model, **kw):
-    payload, _ = json.JSONDecoder().raw_decode(prompt[prompt.rindex('{\n "paragraphs"'):])
+def fake(prompt, key, model):
+    payload = json.loads(prompt[prompt.rindex('{"paragraphs"'):] if '{"paragraphs"' in prompt else prompt[prompt.rindex("{"):])
     out = []
     for p in payload["paragraphs"]:
         q = p
@@ -21,8 +21,7 @@ def fake(prompt, key, model, **kw):
 
 hz.call_gemini = fake
 import app as A
-for _name in ("rewrite_chunk", "draft_chunk", "finalize_chunk"):
-    _orig = getattr(hz, _name)
-    setattr(hz, _name, (lambda f: lambda *a, **k: f(*a, caller=fake, **{x: y for x, y in k.items() if x != "caller"}))(_orig))
+hz_rewrite = hz.rewrite_chunk
+A.hz.rewrite_chunk = lambda *a, **k: hz_rewrite(*a, caller=fake, **{x: y for x, y in k.items() if x != "caller"})
 import uvicorn
 uvicorn.run(A.app, host="127.0.0.1", port=8011, log_level="warning")
