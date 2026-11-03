@@ -42,7 +42,7 @@ SESSION_SECONDS = 8 * 60 * 60
 ALLOWED_DOMAIN = "neilpateldigital.in"
 
 # Paths that stay open (health checks and static assets carry no data).
-OPEN_PATH_PREFIXES = ("/health", "/static/", "/favicon.ico")
+OPEN_PATH_PREFIXES = ("/health", "/api/health", "/static/", "/favicon.ico")
 
 
 def _b64url_decode(value: str) -> bytes:
@@ -100,7 +100,7 @@ class PortalGateMiddleware:
             return await self.app(scope, receive, send)
 
         path = scope.get("path", "/")
-        if path == "/health" or path.startswith(OPEN_PATH_PREFIXES):
+        if path in ("/health", "/api/health") or path.startswith(OPEN_PATH_PREFIXES):
             return await self.app(scope, receive, send)
 
         # Not configured yet (no AGENT_LAUNCH_SECRET): stay open so the agent
