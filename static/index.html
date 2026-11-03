@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Humanizer</title>
+<style>
+  :root { --bg:#0b0d12; --fg:#f5f7fa; --muted:#a3adbd; --mu2:#6b7280; --card:#151922; --soft:#1a202c; --line:#2a303d;
+          --accent:#ff5a1f; --accent-2:#ff723b; --good:#34d399; --bad:#f87171; --warn:#fbbf24;
+          --ins:rgba(52,211,153,.16); --ins-fg:#a7f3d0; --ai:rgba(248,113,113,.18); --ai-fg:#fecaca; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; color:var(--fg); font:15px/1.55 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif; overflow:hidden;
+         background:radial-gradient(900px 500px at 85% 100%, rgba(255,90,31,.08), transparent 60%),
+                    radial-gradient(800px 500px at 10% 0%, rgba(255,90,31,.12), transparent 60%), var(--bg); }
+  [hidden] { display:none !important; }
+
+  /* NP Digital top bar (same as the portal and the other agents) */
+  .np-topbar { position:sticky; top:0; z-index:50; border-bottom:1px solid #1f2430; background:rgba(11,13,18,.8); backdrop-filter:blur(16px); }
+  .np-topbar__inner { height:64px; padding:0 clamp(20px,4.7vw,90px); display:flex; align-items:center; gap:16px; }
+  a.np-brand { display:inline-flex; align-items:center; gap:12px; text-decoration:none; color:inherit; }
+  a.np-brand:hover .np-logo { opacity:.9; }
+  .np-logo { display:inline-flex; align-items:center; gap:.3em; font-size:17px; line-height:1; }
+  .np-logo__box { display:flex; align-items:center; justify-content:center; width:2.15em; height:2.15em; border:.13em solid #f47e57; color:#f47e57; letter-spacing:.03em; }
+  .np-logo__word { padding-bottom:.06em; font-size:1.18em; font-weight:600; letter-spacing:-.015em; color:var(--fg); }
+  .np-brand__divider { width:1px; height:24px; background:var(--line); }
+  .np-brand__label { font-size:11px; line-height:1.25; letter-spacing:.14em; text-transform:uppercase; color:#FF5A1F; font-weight:600; }
+  .np-topbar__right { margin-left:auto; display:flex; align-items:center; gap:10px; }
+  .np-status { display:inline-flex; align-items:center; gap:6px; padding:.3rem .75rem; border-radius:999px; font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em;
+               background:rgba(52,211,153,.08); border:1px solid rgba(52,211,153,.18); color:#34d399; }
+  .np-status i { width:6px; height:6px; border-radius:50%; background:currentColor; animation:pulse 2s ease-in-out infinite; }
+  .np-status.busy { background:rgba(255,90,31,.08); border-color:rgba(255,90,31,.25); color:#ff8a5c; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+  a.np-back { display:inline-flex; align-items:center; gap:6px; height:36px; padding:0 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg);
+              font-size:.85rem; font-weight:600; text-decoration:none; }
+  a.np-back:hover { background:var(--soft); border-color:#3a4252; }
+  .np-version { padding:.3rem .6rem; border-radius:999px; font-size:.72rem; font-weight:600; border:1px solid var(--line); background:var(--card); color:var(--muted); }
+
+  .top { padding:22px clamp(20px,4.7vw,90px) 0; }
+  .top .in { display:flex; align-items:center; gap:16px; padding-bottom:16px; border-bottom:1px solid var(--line); }
+  .logo { width:54px; height:54px; border-radius:14px; background:var(--soft); border:1px solid var(--line); display:grid; place-items:center; flex:none; }
+  .logo svg { width:28px; height:28px; stroke:#ff723b; }
+  .top h1 { font-size:1.55rem; font-weight:700; margin:0; background:linear-gradient(90deg,#ff8a5c,#ff723b); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .top p { margin:2px 0 0; color:var(--muted); font-size:.93rem; }
+
+  .shell { padding:18px clamp(20px,4.7vw,90px) 24px; height:calc(100vh - 172px); }
+  #app { display:grid; grid-template-columns:430px minmax(0,1fr); gap:24px; height:100%; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px; min-height:0; overflow:auto; }
+  .panel-h { font-weight:700; font-size:1.05rem; border-left:3px solid var(--accent); padding-left:10px; margin:0 0 6px; }
+  .muted { color:var(--muted); font-size:.9rem; }
+
+  label.field, .field { display:block; margin:20px 0 8px; font-weight:700; color:var(--muted); font-size:.78rem; letter-spacing:.8px; text-transform:uppercase; }
+  .field small { text-transform:none; letter-spacing:0; font-weight:500; color:var(--mu2); }
+  textarea, input, select { width:100%; padding:12px; background:var(--soft); color:var(--fg); border:1px solid var(--line); border-radius:10px; font:inherit; }
+  textarea { min-height:190px; resize:vertical; line-height:1.6; }
+  input, select { height:44px; padding:0 12px; }
+  :is(textarea,input,select,button,a):focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .hint { color:var(--mu2); font-size:.78rem; margin-top:6px; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .row2 .field { margin-top:20px; }
+
+  .seg { display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:4px; padding:4px; border:1px solid var(--line); border-radius:12px; background:#11151c; }
+  .seg button { padding:9px 8px; border-radius:9px; background:transparent; color:var(--muted); font-weight:600; font-size:.86rem; border:0; cursor:pointer; }
+  .seg button[aria-pressed="true"] { background:var(--accent); color:#fff; }
+  .seg button:not([aria-pressed="true"]):hover { color:var(--fg); background:var(--soft); }
+
+  .drop { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; min-height:150px; border:1.5px dashed #3a4252; border-radius:12px;
+          background:var(--soft); color:var(--muted); text-align:center; padding:18px; cursor:pointer; }
+  .drop:hover, .drop.over { border-color:var(--accent); color:var(--fg); }
+  .drop strong { color:var(--fg); }
+  .linkbtn { background:none; border:0; color:#ff8a5c; font-weight:600; cursor:pointer; padding:0; font:inherit; font-size:.86rem; }
+  .linkbtn:hover { text-decoration:underline; }
+
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:13px 22px; border:0; border-radius:12px; background:var(--accent);
+         color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+  .btn:hover { background:var(--accent-2); }
+  .btn:disabled { opacity:.55; cursor:not-allowed; }
+  .btn.block { width:100%; margin-top:22px; padding:15px; font-size:1rem; }
+  .btn.ghost { background:var(--soft); color:var(--fg); border:1px solid var(--line); padding:9px 14px; font-weight:600; font-size:.86rem; border-radius:10px; }
+  .btn.ghost:hover { border-color:#3a4252; background:#202736; }
+  .center { text-align:center; }
+
+  /* right panel states */
+  .right { display:flex; flex-direction:column; }
+  .state { margin:auto; max-width:560px; text-align:center; padding:24px; }
+  .bigicon { width:84px; height:84px; margin:0 auto 18px; border-radius:50%; display:grid; place-items:center; background:var(--soft); border:1px solid var(--line); }
+  .bigicon svg { width:38px; height:38px; stroke:#ff723b; }
+  .state h2 { margin:0 0 6px; font-size:1.35rem; }
+  .steps { display:flex; justify-content:center; gap:10px; margin:22px 0 18px; color:var(--muted); font-size:.86rem; flex-wrap:wrap; }
+  .steps span b { display:inline-grid; place-items:center; width:26px; height:26px; border-radius:50%; border:1px solid var(--line); color:#ff8a5c; margin-right:6px; }
+  .includes { display:grid; grid-template-columns:1fr 1fr; gap:6px 22px; text-align:left; font-size:.86rem; color:var(--muted); max-width:470px; margin:0 auto; }
+  .includes div::before { content:"✓"; color:#ff723b; margin-right:8px; font-weight:700; }
+  .bar { height:8px; border-radius:99px; background:var(--soft); overflow:hidden; margin:18px auto 8px; max-width:380px; border:1px solid var(--line); }
+  .bar i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--accent-2)); transition:width .4s; }
+  .spinner { width:44px; height:44px; border-radius:50%; border:3px solid var(--soft); border-top-color:var(--accent); animation:spin 1s linear infinite; margin:0 auto 16px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .error { margin-top:14px; padding:12px 14px; border-radius:10px; background:#331621; color:#ff9bb0; border:1px solid #5b2333; font-size:.9rem; text-align:left; }
+
+  /* results */
+  .res-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .res-head h2 { margin:0; font-size:1.15rem; }
+  .res-head .sp { flex:1; }
+  .scores { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:10px; margin-bottom:16px; }
+  .score { background:var(--soft); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .score .k { font-size:.72rem; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); font-weight:700; }
+  .score .v { display:flex; align-items:baseline; gap:6px; margin-top:6px; font-size:1.25rem; font-weight:700; flex-wrap:wrap; }
+  .score .v s { color:var(--mu2); font-size:.9rem; font-weight:600; text-decoration:none; }
+  .score .v .arrow { color:var(--mu2); font-size:.85rem; }
+  .score .d { font-size:.76rem; color:var(--muted); margin-top:2px; }
+  .up { color:var(--good); } .down { color:var(--bad); }
+  .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .toolbar .seg { width:auto; }
+  .toolbar .seg button { padding:7px 14px; }
+  .summary { color:var(--muted); font-size:.86rem; margin-left:auto; }
+
+  .sec { margin:18px 0 8px; font-weight:700; color:#ff8a5c; font-size:.95rem; }
+  .sec small { color:var(--mu2); font-weight:600; margin-right:6px; }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:10px; background:#12161e; }
+  .pair > div { padding:12px 14px; font-size:.93rem; line-height:1.65; }
+  .pair .orig { border-right:1px solid var(--line); color:#c9d1dc; }
+  .pair .lab { font-size:.68rem; text-transform:uppercase; letter-spacing:.7px; font-weight:700; color:var(--mu2); margin-bottom:4px; display:flex; gap:8px; align-items:center; }
+  .pair.use-orig .new { opacity:.45; }
+  .pair.use-orig .orig { background:rgba(255,90,31,.05); }
+  .pair:not(.use-orig) .new { background:rgba(52,211,153,.04); }
+  .pair .foot { grid-column:1 / -1; display:flex; align-items:center; gap:10px; padding:8px 14px; border-top:1px solid var(--line); background:#151a23; font-size:.8rem; color:var(--muted); }
+  .pair .foot .sp { flex:1; }
+  .chip { display:inline-block; padding:2px 8px; border-radius:99px; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
+  .chip.kept { background:rgba(251,191,36,.12); color:var(--warn); }
+  .chip.ok { background:rgba(52,211,153,.12); color:var(--good); }
+  .toggle { background:var(--soft); color:var(--fg); border:1px solid var(--line); padding:5px 10px; border-radius:8px; font-size:.78rem; font-weight:600; cursor:pointer; }
+  .toggle:hover { border-color:#3a4252; }
+  .same { border:1px dashed var(--line); border-radius:10px; padding:10px 14px; color:var(--mu2); font-size:.88rem; margin-bottom:10px; }
+  mark.ai { background:var(--ai); color:var(--ai-fg); border-radius:3px; padding:0 2px; }
+  ins { background:var(--ins); color:var(--ins-fg); text-decoration:none; border-radius:3px; padding:0 1px; }
+  .tok { color:#ffb08f; border-bottom:1px dotted #ff8a5c; }
+  .final { max-width:820px; margin:0 auto; font-size:1rem; line-height:1.75; }
+  .final h3 { color:var(--fg); margin:22px 0 8px; font-size:1.15rem; }
+  .final p { margin:0 0 14px; color:#dde3ea; }
+  .usage { margin-top:18px; padding-top:12px; border-top:1px solid var(--line); color:var(--mu2); font-size:.8rem; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:.78rem; margin:-4px 0 10px; }
+  .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:#1f2633; border:1px solid var(--line); color:var(--fg); padding:10px 16px; border-radius:10px; font-size:.88rem; z-index:99; }
+
+  @media (max-width:1100px) { .scores { grid-template-columns:repeat(3, minmax(0,1fr)); } }
+  @media (max-width:900px) {
+    body { overflow:auto; } .shell { height:auto; } #app { grid-template-columns:1fr; } .panel { overflow:visible; }
+    .pair { grid-template-columns:1fr; } .pair .orig { border-right:0; border-bottom:1px solid var(--line); }
+  }
+  @media (max-width:600px) { .np-brand__divider, .np-brand__label, .np-version { display:none; } .scores { grid-template-columns:1fr 1fr; } .includes { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header class="np-topbar"><div class="np-topbar__inner">
+  <a class="np-brand" href="{{LOGO_HREF}}" aria-label="NP Digital Proto – back to portal">
+    <span class="np-logo" aria-hidden="true"><span class="np-logo__box">NP</span><span class="np-logo__word">digital</span></span>
+    <span class="np-brand__divider" aria-hidden="true"></span>
+    <span class="np-brand__label">Proto</span>
+  </a>
+  <div class="np-topbar__right">
+    <span class="np-status" id="status"><i aria-hidden="true"></i><span id="statusText">Ready</span></span>
+    <span class="np-version">v1.0</span>
+    <a class="np-back" href="{{PORTAL_URL}}/dashboard" {{BACK_HIDDEN}}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+      Back to portal
+    </a>
+  </div>
+</div></header>
+
+<div class="top"><div class="in">
+  <div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><path d="m15 5 3 3"/></svg></div>
+  <div>
+    <h1>Humanizer</h1>
+    <p>Rewrites AI-sounding drafts so they read naturally, keeping your facts, keywords, links and headings.</p>
+  </div>
+</div></div>
+
+<div class="shell"><div id="app">
+  <!-- LEFT: setup -->
+  <section class="panel left" aria-label="Setup">
+    <h2 class="panel-h">Setup</h2>
+
+    <span class="field">1. Your content</span>
+    <div class="seg" role="group" aria-label="Input type">
+      <button type="button" data-src="paste" aria-pressed="true">Paste text</button>
+      <button type="button" data-src="docx" aria-pressed="false">Word file</button>
+      <button type="button" data-src="gdoc" aria-pressed="false">Google Doc</button>
+    </div>
+    <div id="srcPaste" style="margin-top:10px">
+      <textarea id="text" placeholder="Paste a paragraph or a full article. Put headings on their own line (or start them with #)."></textarea>
+      <div class="hint"><span id="wc">0 words</span> · up to 6,000 words per run</div>
+    </div>
+    <div id="srcDocx" style="margin-top:10px" hidden>
+      <label class="drop" id="drop" for="file">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
+        <strong id="fileName">Choose a .docx file</strong>
+        <span>or drag it here · headings, links and bold text are kept</span>
+      </label>
+      <input type="file" id="file" accept=".docx" hidden>
+    </div>
+    <div id="srcGdoc" style="margin-top:10px" hidden>
+      <input id="gdoc" type="url" placeholder="https://docs.google.com/document/d/…">
+      <div class="hint">Share the doc as <b>Anyone with the link → Viewer</b>. You'll get a Word file back.</div>
+    </div>
+
+    <div class="row2">
+      <div><label class="field" for="tone">2. Tone</label>
+        <select id="tone">
+          <option value="professional">Professional</option>
+          <option value="conversational">Conversational</option>
+          <option value="friendly">Friendly &amp; simple</option>
+          <option value="expert">Expert</option>
+        </select></div>
+      <div><label class="field" for="spelling">English</label>
+        <select id="spelling">
+          <option value="in">Indian English</option>
+          <option value="us">US English</option>
+          <option value="uk">UK English</option>
+        </select></div>
+    </div>
+
+    <span class="field">3. How much to change</span>
+    <div class="seg" role="group" aria-label="How much to change" id="strength">
+      <button type="button" data-v="light" aria-pressed="false">Light</button>
+      <button type="button" data-v="balanced" aria-pressed="true">Balanced</button>
+      <button type="button" data-v="strong" aria-pressed="false">Strong</button>
+    </div>
+    <div class="hint" id="strengthHint">Rewrites robotic sentences, keeps each paragraph's structure.</div>
+
+    <label class="field" for="keywords">4. Must-keep keywords <small>(optional, comma-separated)</small></label>
+    <input id="keywords" placeholder="e.g. demat account, open demat account online">
+
+    <label class="field" for="audience">5. Audience <small>(optional)</small></label>
+    <input id="audience" placeholder="e.g. first-time investors in India">
+
+    <div style="margin-top:16px">
+      <button type="button" class="linkbtn" id="voiceToggle">+ Add a brand voice sample</button>
+      <div id="voiceBox" hidden>
+        <label class="field" for="voice">Brand voice sample <small>(1–2 paragraphs of the client's own writing)</small></label>
+        <textarea id="voice" style="min-height:110px" placeholder="Paste text the client wrote themselves. The style is copied, not the content."></textarea>
+      </div>
+    </div>
+
+    <button class="btn block" id="go">Humanize</button>
+    <div class="hint center" id="eta">Facts, numbers, keywords, links and headings are never changed.</div>
+    <div class="error" id="err" hidden></div>
+  </section>
+
+  <!-- RIGHT: states -->
+  <section class="panel right" aria-live="polite">
+    <div class="state" id="empty">
+      <div class="bigicon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
+      <h2>Ready to humanize</h2>
+      <p class="muted">Paste a draft or add a Word file / Google Doc on the left. You'll see every change side by side and choose what to keep.</p>
+      <div class="steps"><span><b>1</b>Content</span><span>→</span><span><b>2</b>Rewrite</span><span>→</span><span><b>3</b>Review &amp; download</span></div>
+      <div class="includes">
+        <div>Natural, varied sentences</div><div>Clichés &amp; filler removed</div>
+        <div>Keywords, links, numbers kept</div><div>Before / after scores</div>
+        <div>Accept or undo per paragraph</div><div>Copy text or download .docx</div>
+      </div>
+    </div>
+
+    <div class="state" id="busy" hidden>
+      <div class="spinner"></div>
+      <h2 id="busyTitle">Reading your content…</h2>
+      <p class="muted" id="busyText">This takes a few seconds.</p>
+      <div class="bar"><i id="barFill"></i></div>
+    </div>
+
+    <div id="result" hidden>
+      <div class="res-head">
+        <h2>Result</h2>
+        <span class="sp"></span>
+        <button class="btn ghost" id="copyBtn">Copy text</button>
+        <button class="btn ghost" id="dlBtn">Download .docx</button>
+      </div>
+      <div class="scores" id="scores"></div>
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="View">
+          <button type="button" data-view="compare" aria-pressed="true">Compare</button>
+          <button type="button" data-view="final" aria-pressed="false">Final text</button>
+        </div>
+        <button class="btn ghost" id="allOrig">Use all originals</button>
+        <button class="btn ghost" id="allNew">Use all rewrites</button>
+        <span class="summary" id="summary"></span>
+      </div>
+      <div class="legend" id="legend"><span><mark class="ai">red</mark> AI-sounding phrase in the original</span><span><ins>green</ins> changed wording</span><span><span class="tok">orange</span> link / bold text (kept)</span></div>
+      <div id="compare"></div>
+      <div id="final" class="final" hidden></div>
+      <div class="usage" id="usage"></div>
+    </div>
+  </section>
+</div></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const TOK = /⟦(\d+)⟧/g;
+const PARALLEL = 3;
+
+const S = { src: "paste", strength: "balanced", file: null, prep: null, res: {}, choice: {}, usage: null, started: 0, view: "compare" };
+
+/* ---------- setup ---------- */
+function status(text, busy) { $("#statusText").textContent = text; $("#status").classList.toggle("busy", !!busy); }
+function words(t) { return (t.match(/[A-Za-z0-9’']+/g) || []).length; }
+$("#text").addEventListener("input", () => { $("#wc").textContent = words($("#text").value).toLocaleString() + " words"; });
+
+$$("[data-src]").forEach(b => b.addEventListener("click", () => {
+  S.src = b.dataset.src;
+  $$("[data-src]").forEach(x => x.setAttribute("aria-pressed", x === b));
+  $("#srcPaste").hidden = S.src !== "paste"; $("#srcDocx").hidden = S.src !== "docx"; $("#srcGdoc").hidden = S.src !== "gdoc";
+}));
+const HINTS = { light: "Fixes only robotic phrasing, clichés and monotone rhythm.",
+                balanced: "Rewrites robotic sentences, keeps each paragraph's structure.",
+                strong: "Freely restructures sentences for natural flow, keeping every point." };
+$$("#strength button").forEach(b => b.addEventListener("click", () => {
+  S.strength = b.dataset.v; $$("#strength button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  $("#strengthHint").textContent = HINTS[S.strength];
+}));
+$("#voiceToggle").addEventListener("click", () => { const box = $("#voiceBox"); box.hidden = !box.hidden;
+  $("#voiceToggle").textContent = box.hidden ? "+ Add a brand voice sample" : "− Remove brand voice sample"; if (box.hidden) $("#voice").value = ""; });
+
+function setFile(f) {
+  if (!f) return;
+  if (!/\.docx$/i.test(f.name)) { showErr("Only .docx files are supported. In Word use File → Save As → Word Document (.docx)."); return; }
+  S.file = f; $("#fileName").textContent = f.name; hideErr();
+}
+$("#file").addEventListener("change", e => setFile(e.target.files[0]));
+const drop = $("#drop");
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => setFile(e.dataTransfer.files[0]));
+
+try { const k = localStorage.getItem("hz.settings"); if (k) { const v = JSON.parse(k);
+  if (v.tone) $("#tone").value = v.tone; if (v.spelling) $("#spelling").value = v.spelling; } } catch (_) {}
+
+function settings() {
+  return { tone: $("#tone").value, spelling: $("#spelling").value, strength: S.strength,
+           keywords: $("#keywords").value, audience: $("#audience").value.trim(), voice_sample: $("#voice").value.trim() };
+}
+function showErr(m) { const e = $("#err"); e.textContent = m; e.hidden = false; }
+function hideErr() { $("#err").hidden = true; }
+function show(id) { ["empty","busy","result"].forEach(x => $("#" + x).hidden = x !== id); }
+
+/* ---------- run ---------- */
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  let data = null;
+  try { data = await r.json(); } catch (_) {}
+  if (!r.ok || !data || data.error) {
+    if (data && data.portal_required) throw new Error("Your session expired. Open the Humanizer again from the portal.");
+    throw new Error((data && (data.error || data.detail)) || `Server error (${r.status}). Please try again.`);
+  }
+  return data;
+}
+
+$("#go").addEventListener("click", run);
+async function run() {
+  hideErr();
+  const fd = new FormData();
+  fd.append("source", S.src);
+  if (S.src === "paste") { if (!$("#text").value.trim()) return showErr("Paste some text first."); fd.append("text", $("#text").value); }
+  if (S.src === "docx") { if (!S.file) return showErr("Choose a Word (.docx) file first."); fd.append("file", S.file); }
+  if (S.src === "gdoc") { if (!/docs\.google\.com\/document\/d\//.test($("#gdoc").value)) return showErr("Paste a Google Doc link (docs.google.com/document/d/…)."); fd.append("gdoc_url", $("#gdoc").value.trim()); }
+  try { localStorage.setItem("hz.settings", JSON.stringify({ tone: $("#tone").value, spelling: $("#spelling").value })); } catch (_) {}
+
+  $("#go").disabled = true; status("Working", true); show("busy");
+  $("#busyTitle").textContent = "Reading your content…"; $("#busyText").textContent = "This takes a few seconds."; $("#barFill").style.width = "4%";
+  S.started = Date.now(); S.res = {}; S.choice = {}; S.usage = { ai_calls: 0, input_tokens: 0, output_tokens: 0, cost_usd: 0 };
+  try {
+    S.prep = await api("/api/prepare", { method: "POST", body: fd });
+    if (!S.prep.gemini) throw new Error("The Gemini API key isn't set on the server yet (GEMINI_API_KEY).");
+    S.phraseRe = new RegExp("(?<![\\w-])(" + S.prep.ai_phrases.slice().sort((a,b) => b.length - a.length)
+                  .map(p => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")(?![\\w-])", "gi");
+    await rewriteAll(settings());
+    await rescore();
+    render();
+    show("result"); status("Done");
+  } catch (e) {
+    show("empty"); status("Ready"); showErr(e.message);
+  } finally { $("#go").disabled = false; }
+}
+
+async function rewriteAll(st) {
+  const byId = Object.fromEntries(S.prep.blocks.map(b => [b.id, b]));
+  const chunks = S.prep.chunks; let done = 0;
+  const total = chunks.length;
+  const update = () => { $("#busyTitle").textContent = `Rewriting section ${Math.min(done + 1, total)} of ${total}…`;
+    $("#busyText").textContent = `${S.prep.words.toLocaleString()} words · about ${Math.max(10, Math.round(total * 12 / PARALLEL))} seconds`;
+    $("#barFill").style.width = Math.max(6, Math.round(100 * done / total)) + "%"; };
+  update();
+  let next = 0;
+  async function worker() {
+    while (next < chunks.length) {
+      const c = chunks[next++];
+      const paras = c.ids.map(id => ({ id, text: byId[id].text, tokens: byId[id].tokens }));
+      try {
+        const r = await api("/api/rewrite", { method: "POST", headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ heading: c.heading, paras, settings: st }) });
+        r.ids.forEach((id, i) => { S.res[id] = { text: r.paragraphs[i], status: r.status[i], note: r.status[i] === "kept" ? (r.notes.find(Boolean) || "") : "" };
+                                    S.choice[id] = r.status[i] === "rewritten" ? "new" : "orig"; });
+        ["ai_calls","input_tokens","output_tokens"].forEach(k => S.usage[k] += r.usage[k] || 0);
+        S.usage.cost_usd += r.cost_usd || 0;
+      } catch (e) {
+        if (/API key|GEMINI_API_KEY|session expired/.test(e.message)) throw e;
+        c.ids.forEach(id => { S.res[id] = { text: byId[id].text, status: "kept", note: "This section couldn't be rewritten (" + e.message + ")" }; S.choice[id] = "orig"; });
+      }
+      done++; update();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(PARALLEL, chunks.length) }, worker));
+}
+
+/* ---------- text helpers ---------- */
+function chosen(b) { const r = S.res[b.id]; return (r && S.choice[b.id] === "new") ? r.text : b.text; }
+function expand(text, toks) { return text.replace(TOK, (_, n) => toks[n] ?? ""); }
+function finalPlain() {
+  return S.prep.blocks.map(b => expand(b.kind === "para" ? chosen(b) : b.text, b.tokens || {})).join("\n\n");
+}
+function finalBody() { return S.prep.blocks.filter(b => b.kind === "para").map(b => expand(chosen(b), b.tokens || {})).join("\n\n"); }
+
+function renderTokens(html, toks) { return html.replace(/⟦(\d+)⟧/g, (_, n) => `<span class="tok">${esc(toks[n] ?? "")}</span>`); }
+function highlightAI(text, toks) {
+  // highlight AI phrases outside tokens
+  return text.split(/(⟦\d+⟧)/).map(part => /^⟦\d+⟧$/.test(part) ? renderTokens(part, toks)
+    : esc(part).replace(S.phraseRe, m => `<mark class="ai">${m}</mark>`)).join("");
+}
+function diffWords(a, b, toks) {
+  const A = a.split(/(\s+)/).filter(x => x !== ""), B = b.split(/(\s+)/).filter(x => x !== "");
+  const wa = A.filter(x => !/^\s+$/.test(x)).map(x => x.toLowerCase().replace(/[^\w⟦⟧]/g, ""));
+  const n = wa.length, Bw = []; B.forEach((x, i) => { if (!/^\s+$/.test(x)) Bw.push(i); });
+  const wb = Bw.map(i => B[i].toLowerCase().replace(/[^\w⟦⟧]/g, "")), m = wb.length;
+  const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = wa[i] === wb[j] ? L[i+1][j+1] + 1 : Math.max(L[i+1][j], L[i][j+1]);
+  const keep = new Set(); let i = 0, j = 0;
+  while (i < n && j < m) { if (wa[i] === wb[j]) { keep.add(Bw[j]); i++; j++; } else if (L[i+1][j] >= L[i][j+1]) i++; else j++; }
+  let out = "", run = "";
+  const flush = () => { if (run) { out += `<ins>${run}</ins>`; run = ""; } };
+  B.forEach((x, idx) => {
+    const piece = /^⟦\d+⟧/.test(x) ? renderTokens(esc(x), toks) : esc(x);
+    if (/^\s+$/.test(x)) { run ? (run += x) : (out += x); }
+    else if (keep.has(idx) || /^⟦\d+⟧/.test(x)) { flush(); out += piece; }
+    else run += piece;
+  });
+  flush(); return out;
+}
+
+/* ---------- render ---------- */
+async function rescore() {
+  try { S.after = await api("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: finalBody() }) }); }
+  catch (_) { S.after = null; }
+}
+function rl(v) { return v >= 80 ? "Very easy" : v >= 70 ? "Easy" : v >= 60 ? "Fairly easy" : v >= 50 ? "Standard" : v >= 40 ? "Fairly hard" : "Hard"; }
+function scoreCard(k, before, after, fmt, betterHigher, desc) {
+  const f = fmt || (x => x);
+  const cls = after == null || after === before || betterHigher == null ? "" : ((after > before) === betterHigher ? "up" : "down");
+  return `<div class="score"><div class="k">${k}</div><div class="v"><s>${esc(f(before))}</s><span class="arrow">→</span><span class="${cls}">${after == null ? "–" : esc(f(after))}</span></div><div class="d">${desc}</div></div>`;
+}
+function renderScores() {
+  const b = S.prep.scores, a = S.after || {};
+  $("#scores").innerHTML =
+    scoreCard("Readability", b.readability, a.readability, x => Math.round(x), true, a.readability != null ? rl(a.readability) + " to read" : "Higher is easier") +
+    scoreCard("AI phrases", b.ai_phrases, a.ai_phrases, null, false, "Clichés like delve, seamless") +
+    scoreCard("Sentence rhythm", b.rhythm, a.rhythm, x => x.toFixed(2), true, "Variety in sentence length") +
+    scoreCard("Avg sentence", b.avg_sentence, a.avg_sentence, x => x.toFixed(1) + "w", null, "Words per sentence (15–20 reads well)") +
+    scoreCard("Passive voice", b.passive_pct, a.passive_pct, x => Math.round(x) + "%", false, "Share of sentences");
+}
+function render() {
+  renderScores();
+  const paras = S.prep.blocks.filter(b => b.kind === "para");
+  const kept = paras.filter(b => S.res[b.id]?.status === "kept").length;
+  const used = paras.filter(b => S.choice[b.id] === "new").length;
+  $("#summary").textContent = `${used} of ${paras.length} paragraphs use the rewrite` + (kept ? ` · ${kept} kept original (safety check)` : "");
+
+  let h = "";
+  for (const b of S.prep.blocks) {
+    if (b.kind === "heading") { h += `<div class="sec"><small>H${b.level || 2}</small>${renderTokens(esc(b.text), b.tokens || {})}</div>`; continue; }
+    if (b.kind === "skip") { h += `<div class="same">${renderTokens(esc(b.text), b.tokens || {}) || "(image / table / special content)"} <small>· unchanged</small></div>`; continue; }
+    const r = S.res[b.id] || { text: b.text, status: "kept" };
+    const useOrig = S.choice[b.id] !== "new";
+    const chip = r.status === "kept" ? `<span class="chip kept">Original kept</span>` : `<span class="chip ok">Rewritten</span>`;
+    h += `<div class="pair${useOrig ? " use-orig" : ""}" data-id="${b.id}">
+      <div class="orig"><div class="lab">Original</div>${highlightAI(b.text, b.tokens || {})}</div>
+      <div class="new"><div class="lab">Rewritten ${chip}</div>${r.status === "kept" ? renderTokens(esc(r.text), b.tokens || {}) : diffWords(b.text, r.text, b.tokens || {})}</div>
+      <div class="foot">${r.note ? esc(r.note) : (useOrig ? "Using the original for this paragraph." : "Using the rewrite.")}<span class="sp"></span>
+        ${r.status === "kept" ? "" : `<button class="toggle" data-toggle="${b.id}">${useOrig ? "Use rewrite" : "Use original"}</button>`}</div></div>`;
+  }
+  $("#compare").innerHTML = h;
+  $("#final").innerHTML = S.prep.blocks.map(b => b.kind === "heading" ? `<h3>${renderTokens(esc(b.text), b.tokens || {})}</h3>`
+      : `<p>${renderTokens(esc(b.kind === "para" ? chosen(b) : b.text), b.tokens || {})}</p>`).join("");
+  const secs = Math.round((Date.now() - S.started) / 1000);
+  const u = S.usage;
+  $("#usage").textContent = `Usage: ${u.ai_calls} AI calls · ${(u.input_tokens + u.output_tokens).toLocaleString()} tokens (${u.input_tokens.toLocaleString()} in / ${u.output_tokens.toLocaleString()} out) · ≈ $${u.cost_usd.toFixed(3)} · ${S.prep.words.toLocaleString()} words · ${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
+}
+
+let rescoreTimer = null;
+function changed() { render(); clearTimeout(rescoreTimer); rescoreTimer = setTimeout(async () => { await rescore(); renderScores(); }, 500); }
+$("#compare").addEventListener("click", e => {
+  const id = e.target?.dataset?.toggle; if (id == null) return;
+  S.choice[id] = S.choice[id] === "new" ? "orig" : "new"; changed();
+});
+$("#allOrig").addEventListener("click", () => { S.prep.blocks.forEach(b => { if (S.res[b.id]) S.choice[b.id] = "orig"; }); changed(); });
+$("#allNew").addEventListener("click", () => { S.prep.blocks.forEach(b => { if (S.res[b.id]?.status === "rewritten") S.choice[b.id] = "new"; }); changed(); });
+$$("[data-view]").forEach(b => b.addEventListener("click", () => {
+  S.view = b.dataset.view; $$("[data-view]").forEach(x => x.setAttribute("aria-pressed", x === b));
+  $("#compare").hidden = S.view !== "compare"; $("#legend").hidden = S.view !== "compare"; $("#final").hidden = S.view !== "final";
+}));
+
+function toast(m) { const t = document.createElement("div"); t.className = "toast"; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); }
+$("#copyBtn").addEventListener("click", async () => {
+  const text = finalPlain();
+  try { await navigator.clipboard.writeText(text); toast("Copied the final text"); }
+  catch (_) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Copied the final text"); }
+});
+$("#dlBtn").addEventListener("click", async () => {
+  const fd = new FormData();
+  const final = {}; S.prep.blocks.forEach(b => { if (S.res[b.id] && S.choice[b.id] === "new") final[b.id] = S.res[b.id].text; });
+  fd.append("source", S.prep.source); fd.append("final", JSON.stringify(final));
+  if (S.prep.source === "paste") { fd.append("blocks", JSON.stringify(S.prep.blocks)); fd.append("name", "article"); }
+  if (S.prep.source === "docx") { fd.append("file", S.file); fd.append("name", S.file.name); }
+  if (S.prep.source === "gdoc") { fd.append("gdoc_url", $("#gdoc").value.trim()); fd.append("name", "google-doc"); }
+  $("#dlBtn").disabled = true;
+  try {
+    const r = await fetch("/api/download", { method: "POST", body: fd });
+    if (!r.ok) { let m = "Download failed."; try { m = (await r.json()).error || m; } catch (_) {} throw new Error(m); }
+    const blob = await r.blob();
+    const name = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/)?.[1] || "humanized.docx";
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (e) { toast(e.message); }
+  finally { $("#dlBtn").disabled = false; }
+});
+</script>
+</body>
+</html>
