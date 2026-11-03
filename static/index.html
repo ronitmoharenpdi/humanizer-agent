@@ -240,6 +240,7 @@
       </div>
       <div class="warn" id="warn" hidden></div>
       <div id="final" class="final"></div>
+      <div class="usage" id="usage"></div>
     </div>
   </section>
 </div></div>
@@ -366,6 +367,10 @@ function render() {
   $("#final").innerHTML = S.prep.blocks.map(b => b.kind === "heading"
       ? `<h3>${esc(expand(b.text, b.tokens || {}))}</h3>`
       : `<p>${esc(expand(b.kind === "para" ? chosen(b) : b.text, b.tokens || {}))}</p>`).join("");
+  const u = S.usage, secs = Math.round((Date.now() - S.started) / 1000);
+  $("#usage").textContent = `Usage: ${u.ai_calls} AI call${u.ai_calls === 1 ? "" : "s"} · ${(u.input_tokens + u.output_tokens).toLocaleString()} tokens ` +
+    `(${u.input_tokens.toLocaleString()} in / ${u.output_tokens.toLocaleString()} out) · ≈ $${u.cost_usd.toFixed(4)} ` +
+    `(≈ ₹${(u.cost_usd * 88).toFixed(2)}) · ${S.prep.words.toLocaleString()} words · ${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
 }
 
 function toast(m) { const t = document.createElement("div"); t.className = "toast"; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); }
