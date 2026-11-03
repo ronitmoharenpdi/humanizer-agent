@@ -24,7 +24,7 @@
   .np-logo__box { display:flex; align-items:center; justify-content:center; width:2.15em; height:2.15em; border:.13em solid #f47e57; color:#f47e57; letter-spacing:.03em; }
   .np-logo__word { padding-bottom:.06em; font-size:1.18em; font-weight:600; letter-spacing:-.015em; color:var(--fg); }
   .np-brand__divider { width:1px; height:24px; background:var(--line); }
-  .np-brand__label { font-size:11px; line-height:1.25; letter-spacing:.14em; text-transform:uppercase; color:#FF5A1F; font-weight:600; }
+  .np-brand__label { font-size:16px; font-weight:600; line-height:1; letter-spacing:.14em; text-transform:uppercase; color:#F5F7FA; }
   .np-topbar__right { margin-left:auto; display:flex; align-items:center; gap:10px; }
   .np-status { display:inline-flex; align-items:center; gap:6px; padding:.3rem .75rem; border-radius:999px; font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em;
                background:rgba(52,211,153,.08); border:1px solid rgba(52,211,153,.18); color:#34d399; }
@@ -137,7 +137,9 @@
   .final { max-width:820px; margin:0 auto; font-size:1rem; line-height:1.75; }
   .final h3 { color:var(--fg); margin:22px 0 8px; font-size:1.15rem; }
   .final p { margin:0 0 14px; color:#dde3ea; }
-  .usage { margin-top:18px; padding-top:12px; border-top:1px solid var(--line); color:var(--mu2); font-size:.8rem; }
+  #result:not([hidden]) { display:flex; flex-direction:column; flex:1 0 auto; }
+  .usage { margin-top:auto; position:sticky; bottom:-22px; padding:12px 0 2px; border-top:1px solid var(--line); background:var(--card); color:var(--mu2); font-size:.8rem; }
+  #final { padding-bottom:16px; }
   .legend { display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:.78rem; margin:-4px 0 10px; }
   .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:#1f2633; border:1px solid var(--line); color:var(--fg); padding:10px 16px; border-radius:10px; font-size:.88rem; z-index:99; }
 

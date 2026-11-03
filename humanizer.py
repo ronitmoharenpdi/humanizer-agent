@@ -35,6 +35,7 @@ from docx.oxml.ns import qn
 
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 CHUNK_WORDS = 350
+MAX_CHUNK_PARAS = 10   # the API accepts up to 12 paragraphs per request
 MAX_INPUT_WORDS = int(os.getenv("MAX_INPUT_WORDS", "6000"))
 LENGTH_RANGE = (0.85, 1.15)  # rewritten chunk must stay within ±15 % of the original
 
@@ -322,7 +323,7 @@ def plan_chunks(blocks: list, max_words: int = CHUNK_WORDS) -> list:
             heading = b.plain()
         elif b.kind == "para":
             w = count_words(b.plain())
-            if cur and words + w > max_words:
+            if cur and (words + w > max_words or len(cur) >= MAX_CHUNK_PARAS):
                 close()
             cur.append(b.id)
             words += w
