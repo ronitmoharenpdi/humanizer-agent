@@ -6,8 +6,8 @@ It improves writing quality only: facts, numbers, names, SEO keywords, links and
 ## What it does
 1. **Input**: paste text (a paragraph or a full article), upload a **Word (.docx)** file, or a **Google Doc link**
    (shared as *Anyone with the link → Viewer*).
-2. **Settings**: tone (Professional / Conversational / Friendly / Expert), how much to change
-   (Light / Balanced / Strong), English (Indian / US / UK), must-keep keywords, audience, optional brand-voice sample.
+2. **Must-keep keywords** (optional). Everything else uses fixed defaults: professional tone, balanced rewrite,
+   Indian English (the engine still supports other tones / levels if they are needed again).
 3. **Rewrite** with Google Gemini, one section (~350 words) per request, three at a time.
 4. **Safety checks (code, not AI)** on every paragraph: links and bold phrases kept exactly once, every number kept,
    must-keep keywords still present (at least once), length not cut by more than half. If a check fails the AI gets one retry with the problems listed;

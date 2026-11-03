@@ -202,43 +202,8 @@
       <div class="hint">Share the doc as <b>Anyone with the link → Viewer</b>. You'll get a Word file back.</div>
     </div>
 
-    <div class="row2">
-      <div><label class="field" for="tone">2. Tone</label>
-        <select id="tone">
-          <option value="professional">Professional</option>
-          <option value="conversational">Conversational</option>
-          <option value="friendly">Friendly &amp; simple</option>
-          <option value="expert">Expert</option>
-        </select></div>
-      <div><label class="field" for="spelling">English</label>
-        <select id="spelling">
-          <option value="in">Indian English</option>
-          <option value="us">US English</option>
-          <option value="uk">UK English</option>
-        </select></div>
-    </div>
-
-    <span class="field">3. How much to change</span>
-    <div class="seg" role="group" aria-label="How much to change" id="strength">
-      <button type="button" data-v="light" aria-pressed="false">Light</button>
-      <button type="button" data-v="balanced" aria-pressed="true">Balanced</button>
-      <button type="button" data-v="strong" aria-pressed="false">Strong</button>
-    </div>
-    <div class="hint" id="strengthHint">Rewrites robotic sentences, keeps each paragraph's structure.</div>
-
-    <label class="field" for="keywords">4. Must-keep keywords <small>(optional, comma-separated)</small></label>
+    <label class="field" for="keywords">2. Must-keep keywords <small>(optional, comma-separated)</small></label>
     <input id="keywords" placeholder="e.g. demat account, open demat account online">
-
-    <label class="field" for="audience">5. Audience <small>(optional)</small></label>
-    <input id="audience" placeholder="e.g. first-time investors in India">
-
-    <div style="margin-top:16px">
-      <button type="button" class="linkbtn" id="voiceToggle">+ Add a brand voice sample</button>
-      <div id="voiceBox" hidden>
-        <label class="field" for="voice">Brand voice sample <small>(1–2 paragraphs of the client's own writing)</small></label>
-        <textarea id="voice" style="min-height:110px" placeholder="Paste text the client wrote themselves. The style is copied, not the content."></textarea>
-      </div>
-    </div>
 
     <button class="btn block" id="go">Humanize</button>
     <div class="hint center" id="eta">Facts, numbers, keywords, links and headings are never changed.</div>
@@ -286,7 +251,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&
 const TOK = /⟦(\d+)⟧/g;
 const PARALLEL = 3;
 
-const S = { src: "paste", strength: "balanced", file: null, prep: null, res: {}, choice: {}, usage: null, started: 0, view: "compare" };
+const S = { src: "paste", file: null, prep: null, res: {}, choice: {}, usage: null, started: 0, view: "compare" };
 
 /* ---------- setup ---------- */
 function status(text, busy) { $("#statusText").textContent = text; $("#status").classList.toggle("busy", !!busy); }
@@ -298,16 +263,6 @@ $$("[data-src]").forEach(b => b.addEventListener("click", () => {
   $$("[data-src]").forEach(x => x.setAttribute("aria-pressed", x === b));
   $("#srcPaste").hidden = S.src !== "paste"; $("#srcDocx").hidden = S.src !== "docx"; $("#srcGdoc").hidden = S.src !== "gdoc";
 }));
-const HINTS = { light: "Fixes only robotic phrasing, clichés and monotone rhythm.",
-                balanced: "Rewrites robotic sentences, keeps each paragraph's structure.",
-                strong: "Freely restructures sentences for natural flow, keeping every point." };
-$$("#strength button").forEach(b => b.addEventListener("click", () => {
-  S.strength = b.dataset.v; $$("#strength button").forEach(x => x.setAttribute("aria-pressed", x === b));
-  $("#strengthHint").textContent = HINTS[S.strength];
-}));
-$("#voiceToggle").addEventListener("click", () => { const box = $("#voiceBox"); box.hidden = !box.hidden;
-  $("#voiceToggle").textContent = box.hidden ? "+ Add a brand voice sample" : "− Remove brand voice sample"; if (box.hidden) $("#voice").value = ""; });
-
 function setFile(f) {
   if (!f) return;
   if (!/\.docx$/i.test(f.name)) { showErr("Only .docx files are supported. In Word use File → Save As → Word Document (.docx)."); return; }
@@ -319,12 +274,8 @@ const drop = $("#drop");
 ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
 drop.addEventListener("drop", e => setFile(e.dataTransfer.files[0]));
 
-try { const k = localStorage.getItem("hz.settings"); if (k) { const v = JSON.parse(k);
-  if (v.tone) $("#tone").value = v.tone; if (v.spelling) $("#spelling").value = v.spelling; } } catch (_) {}
-
 function settings() {
-  return { tone: $("#tone").value, spelling: $("#spelling").value, strength: S.strength,
-           keywords: $("#keywords").value, audience: $("#audience").value.trim(), voice_sample: $("#voice").value.trim() };
+  return { keywords: $("#keywords").value };
 }
 function showErr(m) { const e = $("#err"); e.textContent = m; e.hidden = false; }
 function hideErr() { $("#err").hidden = true; }
@@ -350,7 +301,6 @@ async function run() {
   if (S.src === "paste") { if (!$("#text").value.trim()) return showErr("Paste some text first."); fd.append("text", $("#text").value); }
   if (S.src === "docx") { if (!S.file) return showErr("Choose a Word (.docx) file first."); fd.append("file", S.file); }
   if (S.src === "gdoc") { if (!/docs\.google\.com\/document\/d\//.test($("#gdoc").value)) return showErr("Paste a Google Doc link (docs.google.com/document/d/…)."); fd.append("gdoc_url", $("#gdoc").value.trim()); }
-  try { localStorage.setItem("hz.settings", JSON.stringify({ tone: $("#tone").value, spelling: $("#spelling").value })); } catch (_) {}
 
   $("#go").disabled = true; status("Working", true); show("busy");
   $("#busyTitle").textContent = "Reading your content…"; $("#busyText").textContent = "This takes a few seconds."; $("#barFill").style.width = "4%";
