@@ -3,3 +3,6 @@ python-multipart==0.0.32
 python-docx==1.2.0
 python-dotenv==1.2.3
 uvicorn==0.52.4
+numpy>=1.26
+onnxruntime>=1.18
+tokenizers>=0.19

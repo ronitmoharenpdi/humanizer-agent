@@ -4,7 +4,7 @@
         {
             "src": "app.py",
             "use": "@vercel/python",
-            "config": { "includeFiles": ["static/**", "humanizer.py", "portal_gate.py"] }
+            "config": { "includeFiles": ["static/**", "humanizer.py", "portal_gate.py", "predictability.py"], "maxLambdaSize": "250mb" }
         }
     ],
     "routes": [

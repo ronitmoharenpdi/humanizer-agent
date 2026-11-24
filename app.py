@@ -60,8 +60,15 @@ def page():
 
 
 @app.get("/api/health")
-def health():
-    return {"ok": True, "gemini": bool(gemini_key()), "model": gemini_model(), "max_words": hz.MAX_INPUT_WORDS}
+def health(warm: int = 0):
+    """warm=1 also loads the predictability model and scores a test sentence (first time ~10-20 s)."""
+    res = {"ok": True, "gemini": bool(gemini_key()), "model": gemini_model(), "max_words": hz.MAX_INPUT_WORDS,
+           "predictability": hz.pred.status()}
+    if warm:
+        rows = hz.pred.score_sentences("Choosing the right plan is important. My cat once ate a whole lemon on a Tuesday.")
+        res["predictability"] = hz.pred.status()
+        res["predictability"]["test"] = [{"text": r["text"], "score": r["ppl"], "ai_like": r["ai"]} for r in rows]
+    return res
 
 
 async def _source_bytes(source: str, file: UploadFile | None, gdoc_url: str) -> bytes:

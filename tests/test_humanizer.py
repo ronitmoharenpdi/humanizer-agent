@@ -171,3 +171,59 @@ def test_no_style_retry_when_clean():
     fake = lambda prompt, key, model: (json.dumps({"paragraphs": [HUMAN_PARA]}), {"input_tokens": 1, "output_tokens": 1})  # noqa: E731
     res = h.rewrite_chunk([AI_PARA], [{}], h.Settings(), "", "k", "m", caller=fake)
     assert res["usage"]["ai_calls"] == 1 and res["style"][0]["flags"] == []
+
+
+# --------------------------------------------------------------------------- #
+# Predictability pass (GPT-2 scorer replaced by a stand-in)
+# --------------------------------------------------------------------------- #
+
+def _fake_scores(text):
+    """Stand-in for GPT-2: sentences containing 'simple' or 'right' are 'predictable'."""
+    import predictability as p
+    rows = []
+    for a, b in p.sentence_spans(text):
+        t = text[a:b]
+        ai = bool(re.search(r"\b(simple|right)\b", t, re.I))
+        rows.append({"start": a, "end": b, "text": t.strip(), "ppl": 10.0 if ai else 60.0, "top10": 0.9 if ai else 0.5, "ai": ai})
+    return rows
+
+
+import re  # noqa: E402
+
+ORIG = "Starting a SIP is simple and convenient. You can begin with ₹500 per month through most fund houses in India today."
+REWRITE_1 = "Starting a SIP is simple and convenient. You can begin with ₹500 per month through most fund houses in India."
+REWRITE_2 = "Setting one up takes about as long as ordering lunch online. You can begin with ₹500 per month through most fund houses in India."
+
+
+def test_predictability_pass_rewrites_flagged_sentences(monkeypatch):
+    monkeypatch.setattr(h.pred, "score_sentences", _fake_scores)
+    monkeypatch.setattr(h.pred, "enabled", lambda: True)
+    answers = iter([json.dumps({"paragraphs": [REWRITE_1]}), json.dumps({"paragraphs": [REWRITE_2]})])
+    prompts = []
+
+    def fake(prompt, key, model):
+        prompts.append(prompt)
+        return next(answers), {"input_tokens": 10, "output_tokens": 5}
+
+    res = h.rewrite_chunk([ORIG], [{}], h.Settings(), "", "k", "m", caller=fake)
+    assert res["paragraphs"] == [REWRITE_2]
+    assert "Sentences to rewrite" in prompts[1] and "Starting a SIP is simple" in prompts[1]
+    assert res["predictability"] == {"used": True, "rounds": 1, "ai_sentences_before": 1, "ai_sentences_after": 0}
+    assert res["usage"]["ai_calls"] == 2
+
+
+def test_predictability_never_breaks_safety(monkeypatch):
+    monkeypatch.setattr(h.pred, "score_sentences", _fake_scores)
+    monkeypatch.setattr(h.pred, "enabled", lambda: True)
+    unsafe = "Setting one up takes about as long as ordering lunch online. You can begin with a small amount every month."  # ₹500 lost
+    answers = iter([json.dumps({"paragraphs": [REWRITE_1]})] + [json.dumps({"paragraphs": [unsafe]})] * 2)
+    fake = lambda prompt, key, model: (next(answers), {"input_tokens": 1, "output_tokens": 1})  # noqa: E731
+    res = h.rewrite_chunk([ORIG], [{}], h.Settings(), "", "k", "m", caller=fake)
+    assert res["paragraphs"] == [REWRITE_1] and res["predictability"]["rounds"] == 2
+
+
+def test_predictability_skipped_when_model_missing(monkeypatch):
+    monkeypatch.setattr(h.pred, "score_sentences", lambda text: [])
+    fake = lambda prompt, key, model: (json.dumps({"paragraphs": [REWRITE_1]}), {"input_tokens": 1, "output_tokens": 1})  # noqa: E731
+    res = h.rewrite_chunk([ORIG], [{}], h.Settings(), "", "k", "m", caller=fake)
+    assert res["paragraphs"] == [REWRITE_1] and res["usage"]["ai_calls"] == 1 and res["predictability"]["used"] is False

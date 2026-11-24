@@ -27,6 +27,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
+import predictability as pred
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -564,6 +565,8 @@ def rewrite_chunk(paras: list, tokens_by_para: list, settings: Settings, heading
         return {"paragraphs": list(paras), "status": ["kept"] * n,
                 "notes": ["The AI answer couldn't be read, so this section was left unchanged."], "usage": usage,
                 "style": [_style_out(b) for b in before], "style_before": sum(b["count"] for b in before)}
+    pred_info = _predictability_pass(paras, tokens_by_para, settings, heading, best, api_key, model, caller, usage)
+
     final, status, notes, style = [], [], [], []
     for i in range(n):
         if best[i] is None:
@@ -576,7 +579,97 @@ def rewrite_chunk(paras: list, tokens_by_para: list, settings: Settings, heading
             status.append("rewritten")
             style.append(_style_out(style_check(best[i][1], kws)))
     return {"paragraphs": final, "status": status, "notes": notes, "usage": usage,
-            "style": style, "style_before": sum(b["count"] for b in before)}
+            "style": style, "style_before": sum(b["count"] for b in before), "predictability": pred_info}
+
+
+# --------------------------------------------------------------------------- #
+# 3b. Predictability pass: sentences a small model (GPT-2) finds too predictable get rewritten
+# --------------------------------------------------------------------------- #
+
+PRED_ROUNDS = int(os.getenv("PRED_ROUNDS", "2"))   # extra AI calls per section at most
+
+PRED_GUIDE = """Our detector (a language model that measures how predictable each word is) says the sentences below still
+read as AI-written: every word is the most obvious next word. Rewrite ONLY those sentences so they are less predictable,
+the way an experienced writer explaining this to a friend would put it:
+- choose less obvious but natural words; drop stock phrases ("helps you", "the right", "it is important", "peace of
+  mind", "in just a few minutes", "an excellent choice", "ensures", "a wide range");
+- change the structure: lead with the point, use a short punchy sentence, a question, or a contrast ("not X, but Y");
+- an everyday comparison or picture is welcome (e.g. "takes about as long as ordering lunch online"), but NEVER add new
+  facts, numbers, names, statistics, quotes or claims;
+- keep the meaning, every number, every placeholder ⟦n⟧ and every must-keep phrase exactly;
+- leave all other sentences of the paragraph exactly as they are."""
+
+
+def _predictability_pass(paras, tokens_by_para, settings, heading, best, api_key, model, caller, usage) -> dict:
+    """Up to PRED_ROUNDS targeted rewrites of the sentences GPT-2 finds most predictable.
+    A new version of a paragraph is used only if it passes the safety checks, has no more AI-style problems and is
+    less predictable than before. Updates best[i] in place. Never raises: problems just skip this step."""
+    info = {"used": False, "rounds": 0, "ai_sentences_before": 0, "ai_sentences_after": 0}
+    if not pred.enabled():
+        return info
+    kws = settings.keywords
+    scored = {}
+    for i, b in enumerate(best):
+        if b is not None:
+            rows = pred.score_sentences(expand_tokens(b[1], tokens_by_para[i]))
+            if rows:
+                scored[i] = rows
+    if not scored:
+        info["error"] = pred.status().get("error")
+        return info
+    info["used"] = True
+    info["ai_sentences_before"] = sum(r["ai"] for rows in scored.values() for r in rows)
+    for _ in range(PRED_ROUNDS):
+        targets = [i for i, rows in scored.items() if any(r["ai"] for r in rows)]
+        if not targets:
+            break
+        info["rounds"] += 1
+        current = [best[i][1] for i in targets]
+        lines = [f"Tone: {TONES[settings.tone]}.", f"Spelling: {SPELLING[settings.spelling]}."]
+        if kws:
+            lines.append("Must-keep phrases (SEO keywords): " + "; ".join(f'"{k}"' for k in kws))
+        if heading:
+            lines.append(f'These paragraphs sit under the heading: "{heading}".')
+        notes = [f"paragraph {k}: ⟦{t}⟧ = \"{v}\"" for k, i in enumerate(targets, 1) for t, v in tokens_by_para[i].items()]
+        if notes:
+            lines.append("Placeholders (keep each exactly once):\n" + "\n".join(notes))
+        lines.append(PRED_GUIDE)
+        flagged = []
+        for k, i in enumerate(targets, 1):
+            for r in scored[i]:
+                if r["ai"]:
+                    flagged.append(f'- paragraph {k}: "{r["text"]}"')
+        lines.append("Sentences to rewrite (placeholders are shown as their visible text):\n" + "\n".join(flagged))
+        lines.append(f"Return JSON with exactly {len(targets)} paragraphs, in this order:")
+        lines.append(json.dumps({"paragraphs": current}, ensure_ascii=False, indent=1))
+        try:
+            text, u = caller("\n\n".join(lines), api_key, model)
+        except HumanizerError:
+            break
+        usage["input_tokens"] += u["input_tokens"]
+        usage["output_tokens"] += u["output_tokens"]
+        usage["ai_calls"] += 1
+        out = parse_paragraphs(text, len(targets))
+        if out is None:
+            continue
+        for k, i in enumerate(targets):
+            new = out[k]
+            if check_paragraph(paras[i], new, tokens_by_para[i], kws):
+                continue                                        # breaks a safety rule → keep the current version
+            new_style = style_check(new, kws)["count"]
+            if new_style > best[i][0]:
+                continue                                        # brought AI phrases back
+            rows = pred.score_sentences(expand_tokens(new, tokens_by_para[i]))
+            if not rows:
+                continue
+            old_rows = scored[i]
+            if (sum(r["ai"] for r in rows) < sum(r["ai"] for r in old_rows)
+                    or (sum(r["ai"] for r in rows) == sum(r["ai"] for r in old_rows)
+                        and pred.paragraph_score(rows) > pred.paragraph_score(old_rows))):
+                best[i] = (new_style, new)
+                scored[i] = rows
+    info["ai_sentences_after"] = sum(r["ai"] for rows in scored.values() for r in rows)
+    return info
 
 
 def _style_out(c: dict) -> dict:
