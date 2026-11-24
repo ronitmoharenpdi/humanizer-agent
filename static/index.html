@@ -131,6 +131,13 @@
   .toggle:hover { border-color:#3a4252; }
   .same { border:1px dashed var(--line); border-radius:10px; padding:10px 14px; color:var(--mu2); font-size:.88rem; margin-bottom:10px; }
   mark.ai { background:var(--ai); color:var(--ai-fg); border-radius:3px; padding:0 2px; }
+  mark.left { background:rgba(251,191,36,.18); color:#fde68a; border-radius:3px; padding:0 2px; cursor:help; }
+  .final p.flat { border-left:3px solid rgba(251,191,36,.45); padding-left:10px; }
+  .final.plain mark.left { background:none; color:inherit; padding:0; cursor:auto; }
+  .final.plain p.flat { border-left:none; padding-left:0; }
+  .nlp { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 14px; padding:10px 14px; border-radius:10px;
+         background:var(--soft); border:1px solid var(--line); font-size:.86rem; color:var(--muted); }
+  .nlp b { color:var(--fg); } .nlp .good { color:var(--good); font-weight:700; } .nlp .sp { flex:1; }
   ins { background:var(--ins); color:var(--ins-fg); text-decoration:none; border-radius:3px; padding:0 1px; }
   .tok { color:#ffb08f; border-bottom:1px dotted #ff8a5c; }
   .warn { margin:0 0 14px; padding:10px 14px; border-radius:10px; background:rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.25); color:#fde68a; font-size:.86rem; }
@@ -220,7 +227,7 @@
       <p class="muted">Paste a draft or add a Word file / Google Doc on the left. You'll get the humanized version to copy or download.</p>
       <div class="steps"><span><b>1</b>Content</span><span>→</span><span><b>2</b>Rewrite</span><span>→</span><span><b>3</b>Copy or download</span></div>
       <div class="includes">
-        <div>Natural, varied sentences</div><div>Clichés &amp; filler removed</div>
+        <div>Natural, varied sentences</div><div>AI phrases &amp; flat rhythm checked</div>
         <div>Keywords, links, numbers kept</div><div>Headings unchanged</div>
         <div>Word / Google Doc formatting kept</div><div>Copy text or download .docx</div>
       </div>
@@ -241,6 +248,7 @@
         <button class="btn ghost" id="dlBtn">Download .docx</button>
       </div>
       <div class="warn" id="warn" hidden></div>
+      <div class="nlp" id="nlp" hidden></div>
       <div id="final" class="final"></div>
       <div class="usage" id="usage"></div>
     </div>
@@ -254,7 +262,8 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&
 const TOK = /⟦(\d+)⟧/g;
 const PARALLEL = 3;
 
-const S = { src: "paste", file: null, prep: null, res: {}, choice: {}, usage: null, started: 0, view: "compare" };
+const S = { src: "paste", file: null, prep: null, res: {}, choice: {}, usage: null, started: 0, view: "compare",
+            styleBefore: 0, highlights: true };
 
 /* ---------- setup ---------- */
 function status(text, busy) { $("#statusText").textContent = text; $("#status").classList.toggle("busy", !!busy); }
@@ -307,7 +316,7 @@ async function run() {
 
   $("#go").disabled = true; status("Working", true); show("busy");
   $("#busyTitle").textContent = "Reading your content…"; $("#busyText").textContent = "This takes a few seconds."; $("#barFill").style.width = "4%";
-  S.started = Date.now(); S.res = {}; S.choice = {}; S.usage = { ai_calls: 0, input_tokens: 0, output_tokens: 0, cost_usd: 0 };
+  S.started = Date.now(); S.res = {}; S.choice = {}; S.styleBefore = 0; S.usage = { ai_calls: 0, input_tokens: 0, output_tokens: 0, cost_usd: 0 };
   try {
     S.prep = await api("/api/prepare", { method: "POST", body: fd });
     if (!S.prep.gemini) throw new Error("The Gemini API key isn't set on the server yet (GEMINI_API_KEY).");
@@ -335,7 +344,9 @@ async function rewriteAll(st) {
       try {
         const r = await api("/api/rewrite", { method: "POST", headers: { "Content-Type": "application/json" },
                                               body: JSON.stringify({ heading: c.heading, paras, settings: st }) });
-        r.ids.forEach((id, i) => { S.res[id] = { text: r.paragraphs[i], status: r.status[i], note: r.status[i] === "kept" ? (r.notes.find(Boolean) || "") : "" };
+        S.styleBefore += r.style_before || 0;
+        r.ids.forEach((id, i) => { S.res[id] = { text: r.paragraphs[i], status: r.status[i], note: r.status[i] === "kept" ? (r.notes.find(Boolean) || "") : "",
+                                                 style: (r.style || [])[i] || null };
                                     S.choice[id] = r.status[i] === "rewritten" ? "new" : "orig"; });
         ["ai_calls","input_tokens","output_tokens"].forEach(k => S.usage[k] += r.usage[k] || 0);
         S.usage.cost_usd += r.cost_usd || 0;
@@ -368,11 +379,39 @@ function render() {
   } else { $("#warn").hidden = true; }
   $("#final").innerHTML = S.prep.blocks.map(b => b.kind === "heading"
       ? `<h3>${esc(expand(b.text, b.tokens || {}))}</h3>`
-      : `<p>${esc(expand(b.kind === "para" ? chosen(b) : b.text, b.tokens || {}))}</p>`).join("");
+      : paraHtml(b)).join("");
+  $("#final").classList.toggle("plain", !S.highlights);
+  renderNlp(paras);
   const u = S.usage, secs = Math.round((Date.now() - S.started) / 1000);
   $("#usage").textContent = `Usage: ${u.ai_calls} AI call${u.ai_calls === 1 ? "" : "s"} · ${(u.input_tokens + u.output_tokens).toLocaleString()} tokens ` +
     `(${u.input_tokens.toLocaleString()} in / ${u.output_tokens.toLocaleString()} out) · ≈ $${u.cost_usd.toFixed(4)} ` +
     `(≈ ₹${(u.cost_usd * 88).toFixed(2)}) · ${S.prep.words.toLocaleString()} words · ${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, "0")}s`;
+}
+
+/* AI-style check: sentences that still look AI-written are marked (only on screen; copy / download stay clean) */
+function paraHtml(b) {
+  const toks = b.tokens || {};
+  let html = esc(expand(b.kind === "para" ? chosen(b) : b.text, toks));
+  const st = b.kind === "para" && S.res[b.id]?.style;
+  if (!st) return `<p>${html}</p>`;
+  for (const f of st.flags || []) {
+    const s = esc(expand(f.sentence, toks));
+    const at = html.indexOf(s);
+    if (s && at >= 0) html = html.slice(0, at) + `<mark class="left" title="${esc(f.why)}">${s}</mark>` + html.slice(at + s.length);
+  }
+  return st.flat ? `<p class="flat" title="All sentences in this paragraph are about the same length">${html}</p>` : `<p>${html}</p>`;
+}
+function renderNlp(paras) {
+  const left = paras.reduce((n, b) => n + (S.res[b.id]?.style?.count || 0), 0);
+  const marked = paras.reduce((n, b) => n + (S.res[b.id]?.style?.flags?.length || 0) + (S.res[b.id]?.style?.flat ? 1 : 0), 0);
+  const before = S.styleBefore;
+  if (!before && !left) { $("#nlp").hidden = true; return; }
+  $("#nlp").innerHTML = `<span>AI-style check: <b>${before}</b> problem${before === 1 ? "" : "s"} in your draft → ` +
+    (left ? `<b>${left}</b> left. ` + (marked ? `They're <mark class="left">highlighted</mark>; hover to see why, and fix those lines by hand.` : "")
+          : `<span class="good">none left</span>.`) + `</span><span class="sp"></span>` +
+    (marked ? `<button class="toggle" id="hlBtn">${S.highlights ? "Hide highlights" : "Show highlights"}</button>` : "");
+  $("#nlp").hidden = false;
+  $("#hlBtn")?.addEventListener("click", () => { S.highlights = !S.highlights; render(); });
 }
 
 function toast(m) { const t = document.createElement("div"); t.className = "toast"; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2200); }

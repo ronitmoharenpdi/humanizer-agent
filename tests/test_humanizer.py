@@ -113,3 +113,61 @@ def test_plan_chunks_respects_headings():
     chunks = h.plan_chunks(blocks)
     assert all(c["heading"] == "What is a Demat Account" for c in chunks)
     assert [i for c in chunks for i in c["ids"]] == [1, 3]
+
+
+# --------------------------------------------------------------------------- #
+# AI-style check (NLP)
+# --------------------------------------------------------------------------- #
+
+AI_PARA = ("In today's fast-paced world, leveraging a robust demat account is crucial for every new investor in India. "
+           "This account stores all of your shares in a safe electronic form at all times. "
+           "This makes it easy to buy and sell shares online whenever the market is open.")
+HUMAN_PARA = ("A demat account holds your shares in electronic form. It's simple. You can open one online in about "
+              "ten minutes, and most brokers in India charge very little for it.")
+
+
+def test_style_check_finds_ai_patterns():
+    r = h.style_check(AI_PARA, [])
+    joined = " ".join(r["problems"])
+    assert "crucial" in joined and "same length" in joined and '"this"' in joined
+    assert r["flat"] and r["count"] >= 5
+    assert h.style_check(HUMAN_PARA, [])["count"] == 0
+
+
+def test_style_check_respects_keywords_and_placeholders():
+    assert h.style_check("Read our comprehensive guide to opening a demat account in India today.", ["comprehensive guide"])["count"] == 0
+    assert h.style_check("Read ⟦1⟧ before you open a demat account with any broker in India.", [])["count"] == 0
+
+
+def test_hints_go_into_the_prompt():
+    prompt = h.build_prompt([AI_PARA], [{}], h.Settings(), "", hints=h.style_hints([AI_PARA], []))
+    assert "AI-style checker found" in prompt and "crucial" in prompt
+
+
+def test_style_retry_uses_best_version():
+    still_ai = AI_PARA.replace("In today's fast-paced world, leveraging", "Using")
+    answers = iter([json.dumps({"paragraphs": [still_ai]}), json.dumps({"paragraphs": [HUMAN_PARA]})])
+    prompts = []
+
+    def fake(prompt, key, model):
+        prompts.append(prompt)
+        return next(answers), {"input_tokens": 10, "output_tokens": 5}
+
+    res = h.rewrite_chunk([AI_PARA], [{}], h.Settings(), "", "k", "m", caller=fake)
+    assert res["paragraphs"] == [HUMAN_PARA] and res["status"] == ["rewritten"]
+    assert res["usage"]["ai_calls"] == 2 and "still sounds AI-written" in prompts[1]
+    assert res["style"][0]["count"] == 0 and res["style_before"] >= 5
+
+
+def test_style_retry_never_beats_safety_and_keeps_better_one():
+    worse = AI_PARA.replace("crucial", "important") + " Moreover, it is pivotal."   # safe but still AI-ish
+    answers = iter([json.dumps({"paragraphs": [worse]}), json.dumps({"paragraphs": ["Short."]})])  # 2nd breaks length
+    fake = lambda prompt, key, model: (next(answers), {"input_tokens": 1, "output_tokens": 1})  # noqa: E731
+    res = h.rewrite_chunk([AI_PARA], [{}], h.Settings(), "", "k", "m", caller=fake)
+    assert res["paragraphs"] == [worse] and res["status"] == ["rewritten"] and res["usage"]["ai_calls"] == 2
+
+
+def test_no_style_retry_when_clean():
+    fake = lambda prompt, key, model: (json.dumps({"paragraphs": [HUMAN_PARA]}), {"input_tokens": 1, "output_tokens": 1})  # noqa: E731
+    res = h.rewrite_chunk([AI_PARA], [{}], h.Settings(), "", "k", "m", caller=fake)
+    assert res["usage"]["ai_calls"] == 1 and res["style"][0]["flags"] == []

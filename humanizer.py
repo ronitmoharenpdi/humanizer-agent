@@ -10,6 +10,8 @@ Pipeline
                        tokens, keywords, numbers and length; one retry with the problems listed,
                        otherwise the original paragraph is kept and flagged.
   4. score_text()      readability and "AI feel" measures before / after (plain code, no AI)
+     style_check()     AI-style check (NLP): AI phrases, flat rhythm, repeated openers, long sentences, em dashes.
+                       Guides the rewrite (hints before, one targeted retry after) and marks what's left.
   5. build_docx()      writes the chosen paragraphs back into the original Word file,
                        keeping headings, styles, links and bold phrases.
 """
@@ -382,7 +384,8 @@ Hard rules (breaking any of these makes the answer unusable):
 7. Output only JSON: {"paragraphs": ["...", "..."]}."""
 
 
-def build_prompt(paras: list, tokens_by_para: list, settings: Settings, heading: str, problems: str = "") -> str:
+def build_prompt(paras: list, tokens_by_para: list, settings: Settings, heading: str, problems: str = "",
+                 hints: str = "", style_fix: str = "") -> str:
     lines = [
         f"Tone: {TONES[settings.tone]}.",
         f"How much to change: {STRENGTHS[settings.strength]}",
@@ -404,8 +407,14 @@ def build_prompt(paras: list, tokens_by_para: list, settings: Settings, heading:
     if placeholder_notes:
         lines.append("Placeholders (keep each exactly once; the quoted text is what the reader will see there):\n"
                      + "\n".join(placeholder_notes))
+    if hints:
+        lines.append("Our AI-style checker found these problems in the input. Fix every one of them (a flagged word may stay "
+                     "only if it is a must-keep phrase or the correct technical term, e.g. 'customer journey'):\n" + hints)
     if problems:
         lines.append("Your previous answer broke these rules. Fix them:\n" + problems)
+    if style_fix:
+        lines.append("Your previous answer still sounds AI-written in places. Our checker found the problems below in your "
+                     "previous version of these paragraphs. Fix them, and keep everything else that was good:\n" + style_fix)
     lines.append(f"Rewrite these {len(paras)} paragraph(s). Return JSON with exactly {len(paras)} items:")
     lines.append(json.dumps({"paragraphs": paras}, ensure_ascii=False, indent=1))
     return "\n\n".join(lines)
@@ -497,39 +506,81 @@ def check_paragraph(original: str, rewritten: str, tokens: dict, keywords: list)
 
 def rewrite_chunk(paras: list, tokens_by_para: list, settings: Settings, heading: str,
                   api_key: str, model: str, caller=call_gemini) -> dict:
-    """Rewrite one chunk. Returns {"paragraphs": [...], "status": [...], "notes": [...], "usage": {...}}.
-    status per paragraph: "rewritten" | "kept" (original kept because the rewrite broke a rule)."""
+    """Rewrite one chunk. Returns {"paragraphs", "status", "notes", "usage", "style"}.
+    status per paragraph: "rewritten" | "kept" (original kept because the rewrite broke a safety rule).
+
+    1. The AI-style checker looks at the input and Gemini gets the exact list of problems to fix.
+    2. Safety checks (placeholders, numbers, keywords, length). Broken → one retry; still broken → original kept.
+    3. The AI-style checker looks at the rewrite. Problems left → one more targeted try (STYLE_RETRIES).
+       For every paragraph the safe version with the fewest AI-style problems is used."""
     usage = {"input_tokens": 0, "output_tokens": 0, "ai_calls": 0}
-    best = None
-    problems_text = ""
-    for attempt in range(2):
-        text, u = caller(build_prompt(paras, tokens_by_para, settings, heading, problems_text), api_key, model)
+    n = len(paras)
+    kws = settings.keywords
+    before = [style_check(p, kws) for p in paras]
+    hints = style_hints(paras, kws)
+    best = [None] * n            # (style count, text) of the best SAFE version per paragraph
+    worst_safety = [None] * n    # fewest safety problems seen, for the "kept" note
+    problems_text, style_fix = "", ""
+    safety_tries, style_tries = 0, 0
+    last = None
+    while True:
+        text, u = caller(build_prompt(paras, tokens_by_para, settings, heading, problems_text, hints, style_fix),
+                         api_key, model)
         usage["input_tokens"] += u["input_tokens"]
         usage["output_tokens"] += u["output_tokens"]
         usage["ai_calls"] += 1
-        out = parse_paragraphs(text, len(paras))
+        out = parse_paragraphs(text, n)
         if out is None:
-            problems_text = f"- The answer must be JSON {{\"paragraphs\": [...]}} with exactly {len(paras)} strings."
+            problems_text, style_fix = f"- The answer must be JSON {{\"paragraphs\": [...]}} with exactly {n} strings.", ""
+            safety_tries += 1
+            if safety_tries > 1:
+                break
             continue
-        per = [check_paragraph(o, r, t, settings.keywords) for o, r, t in zip(paras, out, tokens_by_para)]
-        if best is None or sum(map(len, per)) < sum(map(len, best[1])):
-            best = (out, per)
-        if not any(per):
-            break
-        problems_text = "\n".join(f"- paragraph {i}: {'; '.join(p)}" for i, p in enumerate(per, 1) if p)
-    final, status, notes = [], [], []
-    if best is None:
-        return {"paragraphs": list(paras), "status": ["kept"] * len(paras),
-                "notes": ["The AI answer couldn't be read, so this section was left unchanged."], "usage": usage}
-    for i, (orig, new, probs) in enumerate(zip(paras, best[0], best[1])):
-        if probs:
-            final.append(orig)
+        last = out
+        per = [check_paragraph(o, r, t, kws) for o, r, t in zip(paras, out, tokens_by_para)]
+        styles = [style_check(r, kws) for r in out]
+        for i in range(n):
+            if per[i]:
+                if worst_safety[i] is None or len(per[i]) < len(worst_safety[i]):
+                    worst_safety[i] = per[i]
+            elif best[i] is None or styles[i]["count"] < best[i][0]:
+                best[i] = (styles[i]["count"], out[i])
+        unsafe = [i for i in range(n) if per[i] and best[i] is None]      # no safe version of these yet
+        if unsafe and safety_tries < 1:
+            safety_tries += 1
+            problems_text = "\n".join(f"- paragraph {i + 1}: {'; '.join(per[i])}" for i in unsafe)
+            style_fix = ""
+            continue
+        left = [i for i in range(n) if best[i] and best[i][0] > 0]
+        if left and style_tries < STYLE_RETRIES:
+            style_tries += 1
+            problems_text = ""
+            style_fix = "\n".join(f"- paragraph {i + 1} (your version: \"{best[i][1]}\"): "
+                                   + "; ".join(style_check(best[i][1], kws)["problems"]) for i in left)
+            continue
+        break
+
+    if last is None and not any(best):
+        return {"paragraphs": list(paras), "status": ["kept"] * n,
+                "notes": ["The AI answer couldn't be read, so this section was left unchanged."], "usage": usage,
+                "style": [_style_out(b) for b in before], "style_before": sum(b["count"] for b in before)}
+    final, status, notes, style = [], [], [], []
+    for i in range(n):
+        if best[i] is None:
+            final.append(paras[i])
             status.append("kept")
-            notes.append(f"Kept the original of one paragraph: {probs[0]}.")
+            notes.append(f"Kept the original of one paragraph: {(worst_safety[i] or ['the rewrite broke a rule'])[0]}.")
+            style.append(_style_out(before[i]))
         else:
-            final.append(new)
+            final.append(best[i][1])
             status.append("rewritten")
-    return {"paragraphs": final, "status": status, "notes": notes, "usage": usage}
+            style.append(_style_out(style_check(best[i][1], kws)))
+    return {"paragraphs": final, "status": status, "notes": notes, "usage": usage,
+            "style": style, "style_before": sum(b["count"] for b in before)}
+
+
+def _style_out(c: dict) -> dict:
+    return {"count": c["count"], "flat": c["flat"], "problems": c["problems"], "flags": c["flags"]}
 
 
 # --------------------------------------------------------------------------- #
@@ -581,6 +632,103 @@ def score_text(text: str) -> dict:
         "passive_pct": round(100.0 * passive / n_s, 1),
         "dashes": (text or "").count("—") + len(re.findall(r"\s–\s", text or "")),
     }
+
+
+# --------------------------------------------------------------------------- #
+# 4b. AI-style check (NLP, plain code): finds what makes a paragraph sound AI-written,
+#     tells Gemini exactly what to fix, and checks the rewrite again.
+# --------------------------------------------------------------------------- #
+
+FLAT_RHYTHM = 0.25     # sentence-length variation below this (std / mean) = "every sentence the same size"
+LONG_SENTENCE = 35     # words
+STYLE_RETRIES = 1      # extra AI calls per section when AI-style problems are left (only when safety checks pass)
+
+
+def _opener(sentence: str) -> str:
+    m = re.match(r"[\W\d_]*([A-Za-z’']+)", sentence)
+    return m.group(1).lower() if m else ""
+
+
+def style_check(text: str, keywords: list | None = None) -> dict:
+    """AI-style problems in one paragraph (text may contain ⟦n⟧ placeholders, which are ignored).
+    Returns {"problems": [readable lines], "flags": [{"sentence", "why"}], "count": n, "flat": bool}."""
+    clean = TOKEN_RE.sub("", text or "")
+    kws = [k.lower() for k in (keywords or [])]
+    sents = _sentences(text)
+    problems, flags = [], []
+    count = 0
+
+    def flag(sentence, why):
+        for f in flags:
+            if f["sentence"] == sentence:
+                if why not in f["why"]:
+                    f["why"] += "; " + why
+                return
+        flags.append({"sentence": sentence, "why": why})
+
+    # 1. typical AI words and phrases (not when they are part of a must-keep keyword)
+    found = []
+    for sent in sents:
+        for m in _PHRASE_RE.finditer(TOKEN_RE.sub("", sent)):
+            p = m.group(0).lower()
+            if any(p in k for k in kws):
+                continue
+            found.append(p)
+            flag(sent, f'AI phrase "{m.group(0)}"')
+    if found:
+        uniq = sorted(set(found))
+        problems.append("AI-sounding words/phrases: " + ", ".join(f'"{p}"' for p in uniq)
+                        + " (replace with plain words or cut them)")
+        count += len(found)
+
+    # 2. flat rhythm: 3+ sentences of nearly the same length
+    lengths = [count_words(TOKEN_RE.sub("x", s)) for s in sents]
+    flat = False
+    if len(lengths) >= 3:
+        mean = statistics.mean(lengths)
+        if mean >= 8 and statistics.pstdev(lengths) / mean < FLAT_RHYTHM:
+            flat = True
+            problems.append(f"all {len(lengths)} sentences are about the same length ({min(lengths)}–{max(lengths)} words): "
+                            "mix in a short sentence and a longer one")
+            count += 1
+
+    # 3. sentences in a row that start with the same word ("This… This…")
+    openers = [_opener(s) for s in sents]
+    repeated = sorted({o for a, o in zip(openers, openers[1:]) if o and o == a})
+    if repeated:
+        for i in range(1, len(sents)):
+            if openers[i] and openers[i] == openers[i - 1]:
+                flag(sents[i], f'starts with "{sents[i].split()[0]}" like the sentence before')
+        problems.append("sentences in a row start with the same word: " + ", ".join(f'"{o}"' for o in repeated)
+                        + " (vary how they start)")
+        count += len(repeated)
+
+    # 4. very long sentences and em dashes
+    for sent, n in zip(sents, lengths):
+        if n > LONG_SENTENCE:
+            flag(sent, f"very long sentence ({n} words)")
+            count += 1
+    if any(n > LONG_SENTENCE for n in lengths):
+        problems.append(f"a sentence is longer than {LONG_SENTENCE} words: split it")
+    dashes = clean.count("—") + len(re.findall(r"\s–\s", clean))
+    if dashes:
+        for sent in sents:
+            if "—" in sent or re.search(r"\s–\s", sent):
+                flag(sent, "em dash")
+        problems.append("em dashes (—): use a comma or a full stop instead")
+        count += dashes
+
+    return {"problems": problems, "flags": flags, "count": count, "flat": flat}
+
+
+def style_hints(paras: list, keywords: list) -> str:
+    """What the checker found in the input, as instructions for Gemini."""
+    lines = []
+    for i, p in enumerate(paras, 1):
+        probs = style_check(p, keywords)["problems"]
+        if probs:
+            lines.append(f"- paragraph {i}: " + "; ".join(probs))
+    return "\n".join(lines)
 
 
 def readability_label(score: float) -> str:

@@ -12,8 +12,17 @@ It improves writing quality only: facts, numbers, names, SEO keywords, links and
 4. **Safety checks (code, not AI)** on every paragraph: links and bold phrases kept exactly once, every number kept,
    must-keep keywords still present (at least once), length not cut by more than half. If a check fails the AI gets one retry with the problems listed;
    if it still fails, **the original paragraph is kept** and marked "Original kept".
-5. **Result**: only the humanized text (headings kept). A short note appears if any paragraph was left as written.
-6. **Output**: copy the text, or download **.docx**. For Word / Google Doc input the original file comes back with only the
+5. **AI-style check (NLP, plain code)**: `style_check()` finds what makes a paragraph sound AI-written:
+   typical AI words/phrases (the `AI_PHRASES` list; must-keep keywords are ignored), flat rhythm (3+ sentences of
+   nearly the same length), sentences in a row starting with the same word, sentences over 35 words, and em dashes.
+   - **Before** the rewrite, Gemini gets the exact list of problems per paragraph, not just "rewrite this".
+   - **After** the rewrite, the same check runs again. Problems left → **one more targeted try** (`STYLE_RETRIES`)
+     with Gemini's previous version and what's still wrong. Per paragraph the safe version with the fewest problems is used.
+   - Safety checks always come first: an AI-style retry can never replace a safe paragraph with an unsafe one.
+6. **Result**: only the humanized text (headings kept). A short note appears if any paragraph was left as written.
+   The **AI-style check bar** shows problems in the draft → problems left; sentences still flagged are **highlighted**
+   (hover for the reason; "Hide highlights" turns them off). Copy and download never include the highlights.
+7. **Output**: copy the text, or download **.docx**. For Word / Google Doc input the original file comes back with only the
    chosen paragraphs replaced: styles, headings, links, bold phrases, images and tables stay as they were.
 
 Not rewritten on purpose: headings, very short lines (< 8 words), paragraphs with images/fields, tables.
